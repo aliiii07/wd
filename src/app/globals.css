@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Sharlin brand colors. Use them in classNames like bg-rose, text-ink, border-line. */
+@theme inline {
+  --color-canvas: #faf7f4; /* page background, warm ivory */
+  --color-surface: #ffffff; /* cards */
+  --color-ink: #2b2226; /* main text */
+  --color-muted: #7a6d72; /* secondary text */
+  --color-line: #ece4de; /* borders */
+  --color-rose: #b0566f; /* brand accent */
+  --color-rose-dark: #8f3f56;
+  --color-rose-soft: #f6e8ec;
+  --color-gold: #b08d57;
+
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-playfair);
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}

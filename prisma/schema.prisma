@@ -1,0 +1,234 @@
+// Sharlin — database design.
+//
+// Each `model` becomes a table in the database. After changing this file run:
+//   npm run db:migrate
+// That updates the database and regenerates the TypeScript client.
+//
+// Money is stored as whole numbers (Int) in the shop's currency, e.g. 12000000.
+// Never use Float for money: floats cause rounding errors.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ───────────────────────────── CRM ─────────────────────────────
+
+enum CustomerStatus {
+  LEAD      // contacted us, no visit yet
+  CONSULTED // came in and tried dresses
+  BOOKED    // has placed an order
+  COMPLETED // wedding done, dress delivered/returned
+  LOST      // decided not to buy
+}
+
+enum LeadSource {
+  WALK_IN
+  INSTAGRAM
+  TELEGRAM
+  FACEBOOK
+  WEBSITE
+  REFERRAL
+  OTHER
+}
+
+model Customer {
+  id          Int            @id @default(autoincrement())
+  fullName    String
+  phone       String
+  email       String?
+  weddingDate DateTime?
+  budget      Int?
+  status      CustomerStatus @default(LEAD)
+  source      LeadSource     @default(WALK_IN)
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  appointments Appointment[]
+  orders       Order[]
+
+  @@index([phone])
+  @@index([status])
+}
+
+enum AppointmentType {
+  CONSULTATION // first visit, trying dresses
+  FITTING
+  ALTERATION
+  PICKUP
+  RETURN // rental dress coming back
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Appointment {
+  id         Int               @id @default(autoincrement())
+  customerId Int
+  staffId    Int?
+  startsAt   DateTime
+  type       AppointmentType   @default(CONSULTATION)
+  status     AppointmentStatus @default(SCHEDULED)
+  notes      String?
+  createdAt  DateTime          @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  staff    Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([startsAt])
+}
+
+// ───────────────────────────── ERP ─────────────────────────────
+
+model Supplier {
+  id          Int      @id @default(autoincrement())
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  dresses Dress[]
+}
+
+// A dress model in the catalog. `stock` = how many pieces are in the shop.
+model Dress {
+  id          Int      @id @default(autoincrement())
+  sku         String   @unique // your own product code, e.g. "SH-001"
+  name        String
+  designer    String?
+  silhouette  String? // A-line, Mermaid, Ball gown, Sheath...
+  color       String?
+  size        String?
+  price       Int // sale price
+  rentalPrice Int? // leave empty if the dress is not for rent
+  cost        Int? // what the shop paid — used for profit
+  stock       Int      @default(0)
+  isActive    Boolean  @default(true)
+  notes       String?
+  supplierId  Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  supplier   Supplier?   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  orderItems OrderItem[]
+}
+
+enum OrderType {
+  SALE
+  RENTAL
+}
+
+enum OrderStatus {
+  QUOTE          // price given, not confirmed
+  CONFIRMED      // deposit received
+  ORDERED        // ordered from the supplier
+  ARRIVED        // dress arrived in the shop
+  IN_ALTERATIONS
+  READY          // ready for pickup
+  PICKED_UP
+  RETURNED       // rentals only
+  CANCELLED
+}
+
+// An order's total and balance are calculated from its items, alterations
+// and payments (see src/lib/orders.ts), so they can never get out of sync.
+model Order {
+  id            Int         @id @default(autoincrement())
+  customerId    Int
+  type          OrderType   @default(SALE)
+  status        OrderStatus @default(QUOTE)
+  eventDate     DateTime?
+  returnDueDate DateTime? // rentals only
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items       OrderItem[]
+  payments    Payment[]
+  alterations Alteration[]
+
+  @@index([status])
+}
+
+model OrderItem {
+  id       Int     @id @default(autoincrement())
+  orderId  Int
+  dressId  Int
+  size     String?
+  price    Int // price agreed for this order (may differ from catalog price)
+  quantity Int     @default(1)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dress Dress @relation(fields: [dressId], references: [id], onDelete: Restrict)
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+model Payment {
+  id      Int           @id @default(autoincrement())
+  orderId Int
+  amount  Int
+  method  PaymentMethod @default(CASH)
+  paidAt  DateTime      @default(now())
+  note    String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+enum AlterationStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+}
+
+model Alteration {
+  id          Int              @id @default(autoincrement())
+  orderId     Int
+  staffId     Int?
+  description String
+  price       Int              @default(0)
+  dueDate     DateTime?
+  status      AlterationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+
+  order Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff Staff? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+}
+
+// ───────────────────────────── Team ─────────────────────────────
+
+enum StaffRole {
+  OWNER
+  MANAGER
+  CONSULTANT
+  SEAMSTRESS
+}
+
+model Staff {
+  id        Int       @id @default(autoincrement())
+  name      String
+  role      StaffRole @default(CONSULTANT)
+  phone     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  appointments Appointment[]
+  alterations  Alteration[]
+}
