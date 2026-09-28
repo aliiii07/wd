@@ -83,6 +83,12 @@ export function eachDay(from: string, to: string): string[] {
   return out
 }
 
+/** Language-neutral `DD.MM.YYYY`, used in SMS texts and printed contracts. */
+export function dotDate(s: string): string {
+  const [y, m, d] = s.slice(0, 10).split('-')
+  return `${d}.${m}.${y}`
+}
+
 export function eachMonth(from: string, to: string): string[] {
   const out: string[] = []
   for (let d = startOfMonth(from); monthKey(d) <= monthKey(to); d = addMonths(d, 1)) out.push(monthKey(d))

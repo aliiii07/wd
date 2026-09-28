@@ -126,9 +126,11 @@ export function buildPlan(total: number, deposit: number, count: number, start: 
 // ---------- availability ----------
 
 /** Dates during which an order keeps its items away from other bookings. */
-export function blockingWindow(o: Order, cleaningDays: number): [string, string] | null {
-  if (o.status === 'cancelled' || o.status === 'returned' || o.status === 'completed') return null
+export function blockingWindow(o: Order, cleaningDays: number, historical = false): [string, string] | null {
+  if (o.status === 'cancelled') return null
+  // A sold dress never comes back.
   if (o.type === 'sale') return [o.createdAt.slice(0, 10), '9999-12-31']
+  if (!historical && (o.status === 'returned' || o.status === 'completed')) return null
   return [o.pickupDate, addDays(o.returnDate ?? o.pickupDate, cleaningDays)]
 }
 
@@ -138,11 +140,12 @@ export function conflictsFor(
   start: string,
   end: string,
   excludeOrderId?: ID,
+  historical = false,
 ): Order[] {
   return db.orders.filter((o) => {
     if (o.id === excludeOrderId) return false
     if (!o.items.some((i) => i.productId === productId)) return false
-    const w = blockingWindow(o, db.settings.cleaningDays)
+    const w = blockingWindow(o, db.settings.cleaningDays, historical)
     return !!w && overlaps(start, end, w[0], w[1])
   })
 }

@@ -14,6 +14,8 @@ export interface I18n {
   loc: (v: Localized) => string
   money: (n: number) => string
   moneyShort: (n: number) => string
+  /** Compact number without currency, for chart axes. */
+  compact: (n: number) => string
   num: (n: number) => string
   date: (s?: string) => string
   dateShort: (s?: string) => string
@@ -36,6 +38,10 @@ const group = (n: number) =>
     .replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 
 const currency: Record<Lang, string> = { uz: "so'm", ru: 'сум', en: 'UZS' }
+
+export function formatMoney(n: number, lang: Lang): string {
+  return lang === 'en' ? `${group(n).replace(/ /g, ',')} ${currency.en}` : `${group(n)} ${currency[lang]}`
+}
 const million: Record<Lang, string> = { uz: 'mln', ru: 'млн', en: 'M' }
 const thousand: Record<Lang, string> = { uz: 'ming', ru: 'тыс', en: 'K' }
 const billion: Record<Lang, string> = { uz: 'mlrd', ru: 'млрд', en: 'B' }
@@ -90,7 +96,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       setLang,
       t,
       loc: (v) => (v[lang] && v[lang]!.trim()) || v.uz,
-      money: (n) => (lang === 'en' ? `${group(n).replace(/ /g, ',')} ${currency.en}` : `${group(n)} ${currency[lang]}`),
+      money: (n) => formatMoney(n, lang),
+      compact: (n) => compact(n, lang),
       moneyShort: (n) => `${compact(n, lang)} ${lang === 'en' ? '' : currency[lang]}`.trim(),
       num: (n) => (lang === 'en' ? group(n).replace(/ /g, ',') : group(n)),
       date,
