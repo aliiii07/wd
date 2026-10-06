@@ -1,15 +1,16 @@
-import { Fragment, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CalendarHeart, CalendarPlus, ClipboardList, ClipboardPlus, MessageSquare, Pencil, Ruler, Scissors, Trash2, Users } from 'lucide-react'
+import { CalendarHeart, CalendarPlus, ClipboardList, ClipboardPlus, MessageSquare, Pencil, Trash2, Users } from 'lucide-react'
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { useLookups, useStore } from '../data/store'
 import { displayStatus, groupByOrder, orderMoney } from '../data/domain'
 import { diffDays, todayStr } from '../lib/date'
 import { Page } from '../components/Layout'
-import { AppointmentFormModal, ClientFormModal, MEAS_KEYS } from '../components/forms'
-import { SmsComposeModal } from '../components/sms'
-import { altTone, apptTone, Avatar, Chip, Empty, orderTone, useConfirm, useToast } from '../components/ui'
+import { AppointmentFormModal, ClientFormModal } from '../components/forms'
+import { SMS_STATUS_TONE, SmsComposeModal } from '../components/sms'
+import { DocumentsCard } from '../components/documents'
+import { apptTone, Avatar, Chip, Empty, orderTone, useConfirm, useToast } from '../components/ui'
 
 export default function ClientDetail() {
   const { id } = useParams()
@@ -29,7 +30,6 @@ export default function ClientDetail() {
   }
   const orders = db.orders.filter((o) => o.clientId === client.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const appts = db.appointments.filter((a) => a.clientId === client.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
-  const alts = db.alterations.filter((a) => a.clientId === client.id)
   const sms = db.smsLog.filter((s) => s.clientId === client.id)
   const totals = orders.filter((o) => o.status !== 'cancelled').reduce(
     (s, o) => {
@@ -39,7 +39,7 @@ export default function ClientDetail() {
     { paid: 0, balance: 0 },
   )
   const days = client.weddingDate ? diffDays(today, client.weddingDate) : null
-  const meas = client.measurements
+  const hasRecords = orders.length > 0 || db.documents.some((d) => d.ownerType === 'client' && d.ownerId === client.id)
 
   const del = async () => {
     if (!(await confirm(t('c.confirmDelete'), { danger: true, confirmLabel: t('c.delete') }))) return
@@ -49,51 +49,52 @@ export default function ClientDetail() {
   }
 
   return (
-    <Page title={client.name} crumb={L.branch.get(client.branchId)?.name}>
+    <Page
+      title={client.name}
+      crumb={`${t('cl.title')} · ${L.branch.get(client.branchId)?.name ?? ''}`}
+      actions={
+        <>
+          <button className="btn btn-primary" onClick={() => nav(`/orders/new?client=${client.id}`)}><ClipboardPlus />{t('qa.newOrder')}</button>
+          <button className="btn btn-outline" onClick={() => setModal('appt')}><CalendarPlus />{t('qa.newAppointment')}</button>
+          <button className="btn btn-outline" onClick={() => setModal('sms')}><MessageSquare />{t('cl.sendSms')}</button>
+        </>
+      }
+    >
       <div className="grid g-side">
-        <section className="card">
-          <div className="card-body row" style={{ gap: 18, alignItems: 'flex-start' }}>
-            <Avatar name={client.name} lg />
-            <div className="stack sm" style={{ flex: 1, minWidth: 200 }}>
-              <h2 className="section-title">{client.name}</h2>
-              <div className="soft num">{client.phone}</div>
-              <div className="row" style={{ gap: 6 }}>
-                <Chip tone="gold" plain>{t(`source.${client.source}` as DictKey)}</Chip>
-                <Chip plain>SMS: {t(`lang.${client.lang}` as DictKey)}</Chip>
-                <Chip plain>{t('cl.since')}: {dateShort(client.createdAt.slice(0, 10))}</Chip>
+        <section className="card profile">
+          <Avatar name={client.name} lg />
+          <div className="profile-main">
+            <div className="row between">
+              <div className="stack sm" style={{ gap: 4 }}>
+                <span className="eyebrow">{t('c.client')}</span>
+                <span className="profile-phone num">{client.phone}</span>
               </div>
-              {client.notes && <p className="soft">{client.notes}</p>}
+              <div className="row nowrap-row" style={{ gap: 2 }}>
+                <button className="icon-btn" title={t('c.edit')} aria-label={t('c.edit')} onClick={() => setModal('edit')}><Pencil /></button>
+                {!hasRecords && <button className="icon-btn" title={t('c.delete')} aria-label={t('c.delete')} onClick={del}><Trash2 /></button>}
+              </div>
             </div>
-            <div className="row">
-              <button className="btn btn-primary" onClick={() => nav(`/orders/new?client=${client.id}`)}><ClipboardPlus />{t('qa.newOrder')}</button>
-              <button className="btn btn-outline" onClick={() => setModal('appt')}><CalendarPlus />{t('qa.newAppointment')}</button>
-              <button className="btn btn-outline" onClick={() => setModal('sms')}><MessageSquare />{t('cl.sendSms')}</button>
-              <button className="icon-btn" title={t('c.edit')} onClick={() => setModal('edit')}><Pencil /></button>
-              {orders.length === 0 && <button className="icon-btn" title={t('c.delete')} onClick={del}><Trash2 /></button>}
-            </div>
+            <dl className="facts">
+              <div><dt>{t('cl.source')}</dt><dd>{t(`source.${client.source}` as DictKey)}</dd></div>
+              <div><dt>{t('cl.smsLang')}</dt><dd>{t(`lang.${client.lang}` as DictKey)}</dd></div>
+              <div><dt>{t('cl.since')}</dt><dd>{date(client.createdAt.slice(0, 10))}</dd></div>
+              <div><dt>{t('cl.orders')}</dt><dd className="num">{orders.length}</dd></div>
+              <div><dt>{t('cl.totalSpent')}</dt><dd className="num">{money(totals.paid)}</dd></div>
+              <div><dt>{t('cl.debt')}</dt><dd className={`num ${totals.balance > 0 ? 'text-bad' : ''}`}>{totals.balance > 0 ? money(totals.balance) : '—'}</dd></div>
+            </dl>
+            {client.notes && <p className="soft">{client.notes}</p>}
           </div>
         </section>
-        <section className={`card countdown ${days !== null && days >= 0 && days <= 3 ? 'hot' : ''}`} style={{ cursor: 'default', padding: 18 }}>
-          <span className="days" style={{ width: 76, height: 76 }}>
-            <b className="num" style={{ fontSize: 32 }}>{days !== null && days >= 0 ? days : '—'}</b>
-            <small>{t('c.days', { n: '' }).trim()}</small>
-          </span>
-          <div className="stack sm">
-            <span className="label">{t('ord.weddingDate')}</span>
-            <span className="strong">{client.weddingDate ? date(client.weddingDate) : t('cl.noWedding')}</span>
-            {days !== null && <span className="muted small">{days < 0 ? t('cl.weddingPassed') : days === 0 ? t('today.weddingToday') : t('cl.weddingIn', { n: days })}</span>}
-          </div>
+        <section className={`card countdown-card ${days !== null && days >= 0 && days <= 3 ? 'hot' : ''}`}>
+          <span className="eyebrow">{t('ord.weddingDate')}</span>
+          <span className="countdown-big num">{days !== null && days >= 0 ? days : '—'}</span>
+          <span className="soft">{days === null ? t('cl.noWedding') : days < 0 ? t('cl.weddingPassed') : days === 0 ? t('today.weddingToday') : t('cl.weddingIn', { n: days })}</span>
+          {client.weddingDate && <span className="strong">{date(client.weddingDate)}</span>}
         </section>
-      </div>
-
-      <div className="stats">
-        <div className="card stat"><div className="stat-label"><ClipboardList />{t('cl.orders')}</div><div className="stat-value">{orders.length}</div></div>
-        <div className="card stat"><div className="stat-label">{t('cl.totalSpent')}</div><div className="stat-value">{money(totals.paid)}</div></div>
-        <div className={`card stat ${totals.balance > 0 ? 'alert' : ''}`}><div className="stat-label">{t('cl.debt')}</div><div className="stat-value">{money(totals.balance)}</div></div>
       </div>
 
       <div className="grid g-side">
-        <div className="stack" style={{ gap: 20 }}>
+        <div className="stack" style={{ gap: 24 }}>
           <section className="card">
             <div className="card-head"><h3><ClipboardList />{t('cl.orders')}</h3></div>
             {orders.length === 0 ? <Empty title={t('ord.empty')} /> : (
@@ -141,43 +142,23 @@ export default function ClientDetail() {
           </section>
         </div>
 
-        <aside className="stack" style={{ gap: 20 }}>
+        <aside className="stack" style={{ gap: 24 }}>
+          <DocumentsCard ownerType="client" ownerId={client.id} branchId={client.branchId} />
           <section className="card">
             <div className="card-head">
-              <h3><Ruler />{t('cl.measurements')}</h3>
-              <button className="btn btn-ghost btn-sm" onClick={() => setModal('edit')}><Pencil />{t('c.edit')}</button>
+              <h3><MessageSquare />{t('nt.history')}</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => setModal('sms')}>{t('nt.compose')}</button>
             </div>
-            <div className="card-body">
-              <dl className="kv">
-                {MEAS_KEYS.map((k) => (
-                  <Fragment key={k}><dt>{t(`meas.${k}` as DictKey)}</dt><dd>{meas[k] ? `${meas[k]} ${k === 'shoe' ? '' : t('c.cm')}` : '—'}</dd></Fragment>
-                ))}
-              </dl>
-              {meas.updatedAt && <div className="muted small" style={{ marginTop: 10 }}>{date(meas.updatedAt)}</div>}
-            </div>
-          </section>
-          {alts.length > 0 && (
-            <section className="card">
-              <div className="card-head"><h3><Scissors />{t('cl.alterations')}</h3></div>
-              <div className="list">
-                {alts.map((a) => (
-                  <div className="list-row click" key={a.id} onClick={() => nav('/alterations')}>
-                    <div className="grow"><div className="title">{a.tasks}</div><div className="meta">{t('al.due')}: {date(a.dueDate)}</div></div>
-                    <Chip tone={altTone[a.status]}>{t(`alt.${a.status}` as DictKey)}</Chip>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          <section className="card">
-            <div className="card-head"><h3><MessageSquare />{t('nt.history')}</h3></div>
             {sms.length === 0 ? <Empty title={t('c.noData')} /> : (
               <div className="list">
                 {sms.slice(0, 8).map((s) => (
                   <div className="list-row" key={s.id} style={{ alignItems: 'flex-start' }}>
-                    <div className="grow">
-                      <div className="meta">{dateTime(s.sentAt)} · {t(`rem.${s.type}` as DictKey)}</div>
-                      <div style={{ fontSize: 13 }}>{s.text}</div>
+                    <div className="grow stack sm" style={{ gap: 4 }}>
+                      <div className="row between">
+                        <span className="meta">{dateTime(s.sentAt)} · {t(`rem.${s.type}` as DictKey)}</span>
+                        {s.status && <Chip tone={SMS_STATUS_TONE[s.status]}>{t(`nt.status.${s.status}` as DictKey)}</Chip>}
+                      </div>
+                      <div className="small">{s.text}</div>
                     </div>
                   </div>
                 ))}

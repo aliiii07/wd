@@ -42,12 +42,12 @@ export default function CalendarPage() {
           </div>
         ) : (
           <div className="legend">
-            <span><i style={{ background: 'var(--gold)' }} />{t('orderStatus.booked')}</span>
+            <span><i style={{ background: 'var(--accent-ink)' }} />{t('orderStatus.booked')}</span>
             <span><i style={{ background: 'var(--ink)' }} />{t('status.rented')}</span>
             <span><i style={{ background: 'var(--bad)' }} />{t('c.overdue')}</span>
             <span><i style={{ background: 'var(--info-bg)', border: '1px solid #cfc7ea' }} />{t('orderType.sale')}</span>
             <span><i style={{ background: 'repeating-linear-gradient(135deg,#e6dfd0 0 3px,#f4f0e6 3px 6px)' }} />{t('cal.cleaning')}</span>
-            <span><i style={{ background: 'var(--gold-light)', border: '1.5px solid var(--ink)', transform: 'rotate(45deg) scale(.7)' }} />{t('cal.wedding')}</span>
+            <span><i style={{ background: 'var(--side-accent)', border: '1.5px solid var(--ink)', transform: 'rotate(45deg) scale(.7)' }} />{t('cal.wedding')}</span>
           </div>
         )}
       </div>

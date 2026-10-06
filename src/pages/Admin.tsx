@@ -8,7 +8,7 @@ import { nowIso, todayStr } from '../lib/date'
 import { uid } from '../lib/storage'
 import { initialsOf, PLATFORM } from '../lib/brand'
 import type { Account, Shop } from '../data/types'
-import { LangSelect } from '../components/Layout'
+import { LangSelect, ThemeToggle } from '../components/Layout'
 import { Avatar, Chip, Empty, Field, FormFooter, Modal, Stat, useConfirm, useToast } from '../components/ui'
 
 /** Console for the ERP owner: the boutiques on the platform and their founder logins. */
@@ -55,29 +55,32 @@ export default function Admin() {
 
   return (
     <div className="admin">
-      <header className="page-head">
-        <div className="head-row">
-          <div className="head-title">
+      <header className="page-head admin-head">
+        <div className="head-bar">
+          <span className="admin-brand">
             <span className="monogram">{PLATFORM.monogram}</span>
-            <h1>{t('adm.title')}</h1>
-            <span className="crumb">{PLATFORM.name} {PLATFORM.product}</span>
-          </div>
+            <span>{PLATFORM.name}<small>{PLATFORM.product}</small></span>
+          </span>
+          <span className="spacer" />
           <div className="head-controls">
             <LangSelect lang={lang} setLang={setLang} label={t('c.language')} />
-            <span className="head-pill"><KeyRound />{user?.email}</span>
-            <button className="head-pill" onClick={logout}><LogOut />{t('auth.logout')}</button>
+            <ThemeToggle />
+            <span className="ctl ctl-static"><KeyRound />{user?.email}</span>
+            <button className="ctl" onClick={logout}><LogOut />{t('auth.logout')}</button>
           </div>
         </div>
-        <div className="head-spacer" />
-      </header>
-      <main className="content">
-        <div className="row between">
-          <span className="muted">{t('adm.hint')}</span>
-          <div className="row">
+        <div className="head-row">
+          <div className="head-title">
+            <span className="crumb">{t('adm.hint')}</span>
+            <h1>{t('adm.title')}</h1>
+          </div>
+          <div className="head-actions">
             <button className="btn btn-danger" onClick={reset}><RotateCcw />{t('adm.reset')}</button>
             <button className="btn btn-primary" onClick={() => { setEdit(undefined); setOpen(true) }}><Plus />{t('adm.addShop')}</button>
           </div>
         </div>
+      </header>
+      <main className="content">
         <div className="stats four">
           <Stat icon={<Store />} label={t('adm.shops')} value={platform.shops.length} hint={`${t('st.active')}: ${platform.shops.filter((s) => s.active).length}`} />
           <Stat icon={<Building2 />} label={t('nav.branches')} value={rows.reduce((s, r) => s + r.branches, 0)} />

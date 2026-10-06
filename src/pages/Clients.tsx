@@ -101,7 +101,7 @@ export default function Clients() {
                           ) : <span className="muted">—</span>}
                         </td>
                         <td className="soft">{t(`source.${c.source}` as DictKey)}</td>
-                        {scope === 'all' && <td className="soft">{L.branch.get(c.branchId)?.name}</td>}
+                        {scope === 'all' && <td className="soft nowrap">{L.branch.get(c.branchId)?.name}</td>}
                         <td className="num">{s?.orders ?? 0}</td>
                         <td className="num">{money(s?.paid ?? 0)}</td>
                         <td className="num">{s?.balance ? <span className="gold strong">{money(s.balance)}</span> : '—'}</td>

@@ -6,7 +6,7 @@ import type { DictKey } from '../i18n/dict'
 import { useStore } from '../data/store'
 import { DEMO_PASSWORD } from '../data/seed'
 import { PLATFORM } from '../lib/brand'
-import { LangSelect } from '../components/Layout'
+import { LangSelect, ThemeToggle } from '../components/Layout'
 import { Avatar, Field } from '../components/ui'
 
 export default function Login() {
@@ -33,6 +33,7 @@ export default function Login() {
     <div className="login">
       <div className="login-lang">
         <LangSelect lang={lang} setLang={setLang} label={t('c.language')} />
+        <ThemeToggle />
       </div>
       <header className="login-brand">
         <span className="monogram">{PLATFORM.monogram}</span>

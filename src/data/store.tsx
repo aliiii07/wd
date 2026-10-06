@@ -240,12 +240,11 @@ export function useScoped() {
       branches: scope === 'all' ? db.branches : db.branches.filter((b) => b.id === scope),
       products: f(db.products),
       clients: f(db.clients),
-      leads: f(db.leads),
       appointments: f(db.appointments),
       orders: f(db.orders),
       payments: f(db.payments),
-      alterations: f(db.alterations),
       staff: f(db.staff),
+      documents: f(db.documents),
       smsLog: f(db.smsLog),
     }
   }, [db, scope])

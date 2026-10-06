@@ -1,5 +1,5 @@
 // Business operations. Each takes a mutable draft of the DB (see store.mutate) so related records change together.
-import type { Alteration, Charge, DB, ID, Lead, Order, Payment, PaymentMethod, Product, SmsLog } from './types'
+import type { Charge, DB, DocFile, ID, Order, Payment, PaymentMethod, Product, SmsLog } from './types'
 import { groupByOrder, orderMoney, restingStatus } from './domain'
 import { nowIso, todayStr } from '../lib/date'
 import { uid } from '../lib/storage'
@@ -14,7 +14,7 @@ function paymentsOf(d: DB, orderId: ID) {
 function settle(d: DB, productId: ID) {
   const p = d.products.find((x) => x.id === productId)
   if (!p || kindOf(d, p) === 'accessory') return
-  if (p.status === 'sold' || p.status === 'cleaning' || p.status === 'alteration') return
+  if (p.status === 'sold' || p.status === 'cleaning') return
   p.status = restingStatus(d, productId)
 }
 
@@ -66,7 +66,6 @@ export function handOver(d: DB, orderId: ID, opts: { security?: { amount: number
     p.status = o.type === 'sale' ? 'sold' : 'rented'
     if (o.type === 'sale') p.quantity = 0
   }
-  for (const a of d.alterations) if (a.orderId === orderId && a.status !== 'delivered') a.status = 'delivered'
 }
 
 export interface ReturnInput {
@@ -126,7 +125,6 @@ export function cancelOrder(d: DB, orderId: ID) {
       settle(d, p.id)
     }
   }
-  for (const a of d.alterations) if (a.orderId === orderId && a.status !== 'delivered') a.status = 'delivered'
 }
 
 export function addCharge(d: DB, orderId: ID, c: Omit<Charge, 'id' | 'date'>) {
@@ -141,50 +139,16 @@ export function setProductStatus(d: DB, productId: ID, status: Product['status']
   if (status === 'available') settle(d, productId)
 }
 
-export function saveAlteration(d: DB, a: Alteration) {
-  const i = d.alterations.findIndex((x) => x.id === a.id)
-  const prev = i >= 0 ? d.alterations[i] : undefined
-  if (i >= 0) d.alterations[i] = a
-  else d.alterations.unshift(a)
-  const p = d.products.find((x) => x.id === a.productId)
-  if (!p || p.status === 'sold' || p.status === 'rented') return
-  const open = a.status === 'pending' || a.status === 'in_progress' || a.status === 'fitting'
-  if (open) p.status = 'alteration'
-  else if (p.status === 'alteration') {
-    p.status = 'available'
-    settle(d, p.id)
-  }
-  if (prev && prev.productId !== a.productId) settle(d, prev.productId)
-}
-
-export function convertLead(d: DB, leadId: ID, clientId: ID) {
-  const lead = d.leads.find((l) => l.id === leadId)
-  if (!lead || lead.clientId) return
-  d.clients.unshift({
-    id: clientId, branchId: lead.branchId, name: lead.name, phone: lead.phone, weddingDate: lead.weddingDate,
-    lang: 'uz', source: lead.source, measurements: {}, notes: lead.notes, createdAt: nowIso(),
-  })
-  lead.clientId = clientId
-  lead.stage = 'won'
-}
-
-export function moveLead(d: DB, leadId: ID, stage: Lead['stage']) {
-  const lead = d.leads.find((l) => l.id === leadId)
-  if (lead) lead.stage = stage
-}
-
 export function logSms(d: DB, entries: Omit<SmsLog, 'id' | 'sentAt'>[]) {
   const at = nowIso()
   for (const e of entries) d.smsLog.unshift({ ...e, id: uid(), sentAt: at })
 }
 
-export function deleteAlteration(d: DB, id: ID) {
-  const i = d.alterations.findIndex((x) => x.id === id)
-  if (i < 0) return
-  const [a] = d.alterations.splice(i, 1)
-  const p = d.products.find((x) => x.id === a.productId)
-  if (p?.status === 'alteration') {
-    p.status = 'available'
-    settle(d, p.id)
-  }
+export function addDocument(d: DB, doc: DocFile) {
+  d.documents.unshift(doc)
+}
+
+/** Removes the record; the caller deletes the stored file. */
+export function removeDocument(d: DB, id: ID) {
+  d.documents = d.documents.filter((x) => x.id !== id)
 }

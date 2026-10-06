@@ -1,29 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Check, Minus, Search, X } from 'lucide-react'
 import { useI18n } from '../i18n'
-import type { AlterationStatus, AppointmentStatus, DressColor, LeadStage, ProductStatus, Silhouette } from '../data/types'
+import type { AppointmentStatus, DressColor, ProductStatus } from '../data/types'
 import type { DisplayStatus } from '../data/domain'
+import { dressColorHex } from './art'
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info' | 'gold' | 'dark'
 
 // ---------- tone maps ----------
 export const productTone: Record<ProductStatus, Tone> = {
-  available: 'good', reserved: 'gold', rented: 'dark', sold: 'neutral', alteration: 'info', cleaning: 'warn',
+  available: 'good', reserved: 'gold', rented: 'dark', sold: 'neutral', cleaning: 'warn',
 }
 export const orderTone: Record<DisplayStatus, Tone> = {
   booked: 'gold', picked_up: 'dark', returned: 'warn', completed: 'good', cancelled: 'neutral', overdue: 'bad',
 }
 export const apptTone: Record<AppointmentStatus, Tone> = {
   scheduled: 'gold', completed: 'good', cancelled: 'neutral', no_show: 'bad',
-}
-export const altTone: Record<AlterationStatus, Tone> = {
-  pending: 'neutral', in_progress: 'info', fitting: 'gold', ready: 'good', delivered: 'dark',
-}
-export const stageTone: Record<LeadStage, Tone> = {
-  new: 'gold', contacted: 'info', appointment: 'dark', won: 'good', lost: 'neutral',
-}
-export const dressColorHex: Record<DressColor, string> = {
-  white: '#ffffff', ivory: '#fbf6e9', champagne: '#f1e2c4', blush: '#f4d9d6', silver: '#dcdcdc', gold: '#e3c77e', red: '#b5313a', other: '#cfc6b6',
 }
 
 export function Chip({ tone = 'neutral', children, plain, className = '' }: { tone?: Tone; children: ReactNode; plain?: boolean; className?: string }) {
@@ -250,8 +242,19 @@ export function initials(name: string) {
     .join('')
 }
 
-export function Avatar({ name, dark, lg }: { name: string; dark?: boolean; lg?: boolean }) {
-  return <span className={`avatar ${dark ? 'dark' : ''} ${lg ? 'lg' : ''}`}>{initials(name)}</span>
+/** One of five soft brand tints, fixed per name so a person keeps her colour everywhere. */
+function tintOf(name: string) {
+  let h = 0
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return `a${h % 5}`
+}
+
+export function Avatar({ name, dark, lg, src }: { name: string; dark?: boolean; lg?: boolean; src?: string }) {
+  return (
+    <span className={`avatar ${dark ? 'dark' : tintOf(name)} ${lg ? 'lg' : ''} ${src ? 'photo' : ''}`}>
+      {src ? <img src={src} alt={name} /> : initials(name)}
+    </span>
+  )
 }
 
 export function Progress({ value, max }: { value: number; max: number }) {
@@ -265,37 +268,6 @@ export function Progress({ value, max }: { value: number; max: number }) {
 
 export function ColorDot({ color }: { color: DressColor }) {
   return <span className="color-dot" style={{ background: dressColorHex[color] }} />
-}
-
-/** Gown silhouette tinted with the dress colour; the skirt shape follows the silhouette. */
-export function DressSvg({ color, style }: { color: DressColor; style?: Silhouette }) {
-  const fill = dressColorHex[color]
-  const stroke = color === 'red' ? '#7c1f25' : '#b8862b'
-  const skirts: Record<string, string> = {
-    a_line: 'M40 70 L18 150 Q50 158 82 150 L60 70 Z',
-    ball_gown: 'M40 68 Q6 110 4 150 Q50 162 96 150 Q94 110 60 68 Z',
-    mermaid: 'M41 70 Q36 110 42 122 Q20 140 14 152 Q50 160 86 152 Q80 140 58 122 Q64 110 59 70 Z',
-    sheath: 'M40 70 L34 152 Q50 156 66 152 L60 70 Z',
-    princess: 'M40 68 Q14 110 10 150 Q50 160 90 150 Q86 110 60 68 Z',
-    empire: 'M38 58 Q26 105 20 150 Q50 158 80 150 Q74 105 62 58 Z',
-    short: 'M40 70 Q22 88 16 104 Q50 112 84 104 Q78 88 60 70 Z',
-    national: 'M36 60 L22 150 Q50 156 78 150 L64 60 Z',
-  }
-  const skirt = skirts[style ?? 'a_line'] ?? skirts.a_line
-  const bodice = style === 'empire' ? 'M40 30 Q50 26 60 30 L62 58 L38 58 Z' : 'M40 30 Q50 26 60 30 L61 70 Q50 74 39 70 Z'
-  return (
-    <svg className="dress" viewBox="0 0 100 164" aria-hidden="true">
-      <path d="M42 16 Q50 24 58 16" fill="none" stroke={stroke} strokeWidth="1.2" />
-      <path d="M42 16 L40 30 M58 16 L60 30" stroke={stroke} strokeWidth="1.2" />
-      <path d={skirt} fill={fill} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round" />
-      <path d={bodice} fill={fill} stroke={stroke} strokeWidth="1.3" strokeLinejoin="round" />
-      {style === 'national' ? (
-        <path d="M30 90 L70 90 M27 110 L73 110 M24 130 L76 130" stroke={stroke} strokeWidth="1" strokeDasharray="2 3" />
-      ) : (
-        <path d="M39 70 Q50 76 61 70" fill="none" stroke={stroke} strokeWidth="1" />
-      )}
-    </svg>
-  )
 }
 
 /** A modal's standard cancel/save pair. */

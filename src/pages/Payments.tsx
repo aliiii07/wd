@@ -159,7 +159,7 @@ function Pos() {
       if (!cid) {
         cid = walkInId
         if (!d.clients.some((c) => c.id === walkInId)) {
-          d.clients.push({ id: walkInId, branchId, name: t('ord.walkIn'), phone: '—', lang: 'uz', source: 'walk_in', measurements: {}, createdAt: nowIso() })
+          d.clients.push({ id: walkInId, branchId, name: t('ord.walkIn'), phone: '—', lang: 'uz', source: 'walk_in', createdAt: nowIso() })
         }
       }
       const today = todayStr()

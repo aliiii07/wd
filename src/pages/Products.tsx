@@ -10,7 +10,8 @@ import { uid } from '../lib/storage'
 import type { Product, ProductKind, ProductType } from '../data/types'
 import { Page } from '../components/Layout'
 import { MODES, PRODUCT_STATUSES, ProductFormModal } from '../components/forms'
-import { Chip, ColorDot, DressSvg, Empty, Field, FormFooter, Modal, productTone, SearchInput, Segmented, useConfirm, useToast } from '../components/ui'
+import { Chip, ColorDot, Empty, Field, FormFooter, Modal, productTone, SearchInput, Segmented, useConfirm, useToast } from '../components/ui'
+import { ProductVisual } from '../components/art'
 
 type Tab = 'dresses' | 'accessories' | 'types'
 
@@ -90,30 +91,32 @@ function Dresses() {
             const next = nextBooking(db.orders, p.id, today)
             return (
               <article className="product-card" key={p.id}>
-                <div className="swatch" onClick={() => nav(`/products/${p.id}`)}>
-                  <Chip tone={productTone[p.status]}>{t(`status.${p.status}` as DictKey)}</Chip>
-                  <span className="code">{p.code}</span>
-                  <DressSvg color={p.color} style={p.style} />
-                </div>
+                <button className="pc-media" onClick={() => nav(`/products/${p.id}`)} aria-label={p.name}>
+                  <ProductVisual product={p} />
+                  <span className="pc-status"><Chip tone={productTone[p.status]}>{t(`status.${p.status}` as DictKey)}</Chip></span>
+                  <span className="pc-code">{p.code}</span>
+                </button>
                 <div className="pc-body">
-                  <div>
-                    <div className="pc-title">{p.name}</div>
-                    <div className="pc-sub">{loc(L.type.get(p.typeId)!.name)}{p.designer ? ` · ${p.designer}` : ''}{scope === 'all' ? ` · ${L.branch.get(p.branchId)?.name}` : ''}</div>
+                  <div className="pc-head">
+                    <h4 className="pc-title">{p.name}</h4>
+                    <span className="pc-size num">{p.size}</span>
                   </div>
-                  <dl className="pc-rows">
-                    <dt>{t('pr.size')}</dt><dd>{p.size}</dd>
-                    <dt>{t('pr.color')}</dt><dd><ColorDot color={p.color} />{t(`color.${p.color}` as DictKey)}</dd>
-                    {p.style && (<><dt>{t('pr.style')}</dt><dd>{t(`style.${p.style}` as DictKey)}</dd></>)}
-                    {p.mode !== 'sale' && (<><dt>{t('pr.rentPrice')}</dt><dd>{money(p.rentPrice)}</dd></>)}
-                    {p.mode !== 'rent' && (<><dt>{t('pr.salePrice')}</dt><dd>{money(p.salePrice)}</dd></>)}
-                    <dt>{t('pr.condition')}</dt><dd>{t(`cond.${p.condition}` as DictKey)}</dd>
-                  </dl>
-                  {next && <Chip tone="gold" plain>{t('pr.nextBooking', { date: dateShort(next.pickupDate) })}</Chip>}
+                  <div className="pc-sub">{loc(L.type.get(p.typeId)!.name)}{p.designer ? ` · ${p.designer}` : ''}{scope === 'all' ? ` · ${L.branch.get(p.branchId)?.name}` : ''}</div>
+                  <div className="pc-prices">
+                    {p.mode !== 'sale' && <span><small>{t('pr.rent')}</small>{money(p.rentPrice)}</span>}
+                    {p.mode !== 'rent' && <span><small>{t('pr.sell')}</small>{money(p.salePrice)}</span>}
+                  </div>
+                  <div className="pc-meta">
+                    <ColorDot color={p.color} />{t(`color.${p.color}` as DictKey)}
+                    {p.style && <> · {t(`style.${p.style}` as DictKey)}</>} · {t(`cond.${p.condition}` as DictKey)}
+                  </div>
+                  {next && <div className="pc-next">{t('pr.nextBooking', { date: dateShort(next.pickupDate) })}</div>}
                 </div>
-                <div className="pc-actions" style={{ gridTemplateColumns: p.status === 'sold' ? '1fr' : p.mode === 'both' ? '1fr 1fr 1fr' : '1fr 1fr' }}>
-                  <button className="btn btn-outline btn-sm" onClick={() => { setEdit(p); setOpen(true) }}><Pencil />{t('c.edit')}</button>
-                  {p.status !== 'sold' && p.mode !== 'sale' && <button className="btn btn-primary btn-sm" onClick={() => nav(`/orders/new?product=${p.id}&type=rental`)}>{t('pr.rent')}</button>}
-                  {p.status !== 'sold' && p.mode !== 'rent' && <button className="btn btn-gold btn-sm" onClick={() => nav(`/orders/new?product=${p.id}&type=sale`)}>{t('pr.sell')}</button>}
+                <div className="pc-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setEdit(p); setOpen(true) }}><Pencil />{t('c.edit')}</button>
+                  <span className="spacer" />
+                  {p.status !== 'sold' && p.mode !== 'sale' && <button className="btn btn-outline btn-sm" onClick={() => nav(`/orders/new?product=${p.id}&type=rental`)}>{t('pr.rent')}</button>}
+                  {p.status !== 'sold' && p.mode !== 'rent' && <button className="btn btn-primary btn-sm" onClick={() => nav(`/orders/new?product=${p.id}&type=sale`)}>{t('pr.sell')}</button>}
                 </div>
               </article>
             )
@@ -132,7 +135,7 @@ function Dresses() {
             <tbody>
               {list.map((p) => (
                 <tr key={p.id} className="click" onClick={() => nav(`/products/${p.id}`)}>
-                  <td><div className="cell-main">{p.name}</div><div className="cell-sub">{p.code}</div></td>
+                  <td><div className="person"><ProductVisual product={p} className="pv-thumb" /><div><div className="cell-main">{p.name}</div><div className="cell-sub">{p.code}</div></div></div></td>
                   <td className="soft">{loc(L.type.get(p.typeId)!.name)}</td>
                   <td>{p.size}</td>
                   <td className="nowrap"><ColorDot color={p.color} />{t(`color.${p.color}` as DictKey)}</td>
@@ -202,7 +205,7 @@ function Accessories() {
             <tbody>
               {list.map((p) => (
                 <tr key={p.id}>
-                  <td><div className="cell-main">{p.name}</div><div className="cell-sub">{p.code}</div></td>
+                  <td><div className="person"><ProductVisual product={p} kind="accessory" className="pv-thumb" /><div><div className="cell-main">{p.name}</div><div className="cell-sub">{p.code}</div></div></div></td>
                   <td className="soft">{loc(L.type.get(p.typeId)!.name)}</td>
                   <td>{p.size}</td>
                   {scope === 'all' && <td className="soft">{L.branch.get(p.branchId)?.name}</td>}

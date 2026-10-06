@@ -1,15 +1,15 @@
 // Demo data: the platform registry plus one boutique ("Sharlin") with two branches and five clients in each.
 // Dates are relative to today so the dashboards always have something happening.
 import type {
-  Account, Alteration, AlterationStatus, Appointment, Branch, Client, DB, DressColor, ID, Lang, Lead, LeadSource, Order,
-  Payment, PaymentMethod, Platform, Product, ProductType, Shop, Silhouette, SmsTemplate, Staff,
+  Account, Appointment, Branch, Client, ClientSource, DB, DressColor, ID, Lang, Order, Payment, PaymentMethod, Platform,
+  Product, ProductType, Settings, Shop, Silhouette, SmsTemplate, Staff,
 } from './types'
 import { addDays, dotDate, todayStr } from '../lib/date'
 import { orderPrefixOf } from '../lib/brand'
 import { buildPlan, conflictsFor, isoAt, orderTotal, planRows } from './domain'
 
 /** Bump when the boutique data shape or demo content changes; stored data is then re-seeded. */
-export const DB_VERSION = 3
+export const DB_VERSION = 4
 export const PLATFORM_VERSION = 1
 export const DEMO_PASSWORD = '123456'
 export const DEMO_SHOP_ID = 'sharlin'
@@ -49,10 +49,6 @@ export const DEFAULT_TEMPLATES: SmsTemplate[] = [
     uz: "Hurmatli {name}! To'yingizga {days} kun qoldi! {store} jamoasi sizni oldindan tabriklaydi.",
     ru: 'Уважаемая {name}! До вашей свадьбы {days} дн.! Команда {store} заранее поздравляет вас.',
     en: 'Dear {name}, only {days} days until your wedding! Warm wishes from the {store} team.' } },
-  { type: 'alteration_ready', text: {
-    uz: "Hurmatli {name}! Libosingizdagi tikuv ishlari tayyor. Primerkaga kelishingiz mumkin. {phone}",
-    ru: 'Уважаемая {name}! Подгонка вашего платья готова. Ждём вас на примерку. {phone}',
-    en: 'Dear {name}, the alterations on your dress are done. Come in for a fitting any time. {phone}' } },
 ]
 
 /** Starting product types for every new boutique; each boutique can rename them or add more. */
@@ -69,6 +65,43 @@ export function defaultProductTypes(createdAt: string): ProductType[] {
   ]
 }
 
+export function defaultSettings(storeName: string): Settings {
+  return {
+    storeName,
+    orderPrefix: orderPrefixOf(storeName),
+    phone: '',
+    instagram: '',
+    telegram: '',
+    legalName: '',
+    inn: '',
+    bankName: '',
+    bankAccount: '',
+    mfo: '',
+    contractNote: '',
+    lateFeePerDay: 300_000,
+    defaultSecurityDeposit: 2_000_000,
+    cleaningDays: 2,
+    defaultRentalDays: 3,
+    defaultDepositPercent: 30,
+    defaultInstallments: 1,
+    methods: ['cash', 'card', 'terminal', 'click', 'payme', 'transfer'],
+    openTime: '10:00',
+    closeTime: '20:00',
+    appointmentMinutes: 60,
+    accent: 'gold',
+    sms: {
+      mode: 'log',
+      gatewayUrl: '',
+      apiKey: '',
+      sender: '4546',
+      reminders: { appointment: true, pickup: true, return: true, overdue: true, balance: true, wedding: true },
+      pickupDaysAhead: 2,
+      weddingDaysAhead: 7,
+      balanceDaysAhead: 7,
+    },
+  }
+}
+
 /** An empty boutique, as the platform admin creates it. */
 export function createShopDb(shop: Shop, branches: Branch[]): DB {
   return {
@@ -77,22 +110,14 @@ export function createShopDb(shop: Shop, branches: Branch[]): DB {
     productTypes: defaultProductTypes(shop.createdAt || new Date().toISOString()),
     products: [],
     clients: [],
-    leads: [],
     appointments: [],
     orders: [],
     payments: [],
-    alterations: [],
     staff: [],
+    documents: [],
     smsTemplates: structuredClone(DEFAULT_TEMPLATES),
     smsLog: [],
-    settings: {
-      storeName: shop.name,
-      orderPrefix: orderPrefixOf(shop.name),
-      lateFeePerDay: 300_000,
-      defaultSecurityDeposit: 2_000_000,
-      cleaningDays: 2,
-      defaultRentalDays: 3,
-    },
+    settings: defaultSettings(shop.name),
     orderSeq: 1001,
   }
 }
@@ -116,7 +141,7 @@ interface ClientSpec {
   branchId: ID
   name: string
   lang: Lang
-  source: LeadSource
+  source: ClientSource
 }
 
 /** One order's story, in days relative to today. */
@@ -144,7 +169,8 @@ interface OrderSpec {
   /** Method of the first payment. */
   method?: PaymentMethod
   extras?: ID[]
-  alteration?: { status: AlterationStatus; due: number; price: number; tasks: string; fittings: [number, string][] }
+  /** Try-on sessions before pickup: [day offset, time]. */
+  fittings?: [number, string][]
 }
 
 export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
@@ -170,15 +196,16 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
     { id: 'b2', name: 'Sharlin Cola', address: 'Toshkent sh.', phone: '+998 71 200 33 44', createdAt: isoAt(day(-220), 10) },
   ]
   const db = createShopDb(shop, branches)
+  db.settings.phone = branches[0].phone
 
   // ---------- staff ----------
   const staffSpec: [ID, string, Staff['role']][] = [
     ['b1', 'Nilufar Ergasheva', 'manager'], ['b1', 'Dilnoza Karimova', 'stylist'], ['b1', 'Aziza Tursunova', 'stylist'],
-    ['b1', 'Gulnora Saidova', 'tailor'], ['b1', 'Muhabbat Qodirova', 'tailor'], ['b1', 'Shahnoza Ismoilova', 'sales'],
-    ['b1', 'Laylo Nazarova', 'sales'],
-    ['b2', 'Feruza Mirzayeva', 'manager'], ['b2', 'Kamila Hasanova', 'stylist'], ['b2', 'Sabina Sobirova', 'stylist'],
-    ['b2', 'Zulfiya Toshmatova', 'tailor'], ['b2', 'Mohira Abdullayeva', 'sales'], ['b2', "Charos Yo'ldosheva", 'sales'],
-    ['b2', 'Umida Rasulova', 'admin'],
+    ['b1', 'Shahnoza Ismoilova', 'sales'], ['b1', 'Laylo Nazarova', 'sales'], ['b1', 'Gulnora Saidova', 'makeup'],
+    ['b1', "Ra'no Xasanova", 'cashier'], ['b1', 'Muhabbat Qodirova', 'cleaner'],
+    ['b2', 'Feruza Mirzayeva', 'manager'], ['b2', 'Kamila Hasanova', 'stylist'], ['b2', 'Sabina Sobirova', 'hair'],
+    ['b2', 'Mohira Abdullayeva', 'sales'], ['b2', "Charos Yo'ldosheva", 'sales'], ['b2', 'Zulfiya Toshmatova', 'makeup'],
+    ['b2', 'Umida Rasulova', 'admin'], ['b2', 'Saodat Karimova', 'cleaner'],
   ]
   db.staff = staffSpec.map(([branchId, name, role]) => ({
     id: id('s'),
@@ -187,12 +214,13 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
     phone: phone(),
     role,
     commissionRate: role === 'sales' ? pick([3, 4, 5]) : role === 'stylist' ? 2 : role === 'manager' ? 1 : 0,
-    salary: role === 'manager' ? 8_000_000 : role === 'tailor' ? 6_000_000 : role === 'admin' ? 4_000_000 : 5_000_000,
+    salary: { manager: 8_000_000, makeup: 6_000_000, hair: 6_000_000, cleaner: 3_000_000, cashier: 4_500_000, admin: 4_000_000 }[role as string] ?? 5_000_000,
     workDays: pick([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6], [0, 1, 3, 4, 5, 6], [0, 2, 3, 4, 5, 6]]),
     shiftStart: pick(['09:00', '10:00']),
     shiftEnd: pick(['18:00', '19:00', '20:00']),
     hiredAt: day(-int(60, 380)),
     active: true,
+    birthday: `${int(1985, 2002)}-${String(int(1, 12)).padStart(2, '0')}-${String(int(1, 28)).padStart(2, '0')}`,
   }))
   const staffOf = (b: ID, ...roles: Staff['role'][]) => db.staff.filter((s) => s.branchId === b && roles.includes(s.role))
 
@@ -274,14 +302,7 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
   ]
   const clients = new Map<string, Client>()
   for (const c of clientSpecs) {
-    const client: Client = {
-      id: id('c'), branchId: c.branchId, name: c.name, phone: phone(), lang: c.lang, source: c.source,
-      measurements: {
-        bust: int(80, 96), waist: int(58, 74), hips: int(86, 102), height: int(156, 176),
-        shoulder: int(36, 41), sleeve: int(56, 62), length: int(140, 158), shoe: int(36, 40),
-      },
-      createdAt: '',
-    }
+    const client: Client = { id: id('c'), branchId: c.branchId, name: c.name, phone: phone(), lang: c.lang, source: c.source, createdAt: '' }
     clients.set(c.key, client)
     db.clients.push(client)
   }
@@ -331,20 +352,7 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
     if (!client.createdAt || o.createdAt < client.createdAt) client.createdAt = isoAt(addDays(created, -3), 11)
     // The gown order sets the wedding date; other dresses are for related events (kelin salom, evening party).
     if (s.dress === 't1' || !client.weddingDate) client.weddingDate = day(s.wedding)
-    client.measurements.updatedAt = created
-
-    if (s.alteration) {
-      const tailor = pick(staffOf(branchId, 'tailor'))
-      const alt: Alteration = {
-        id: id('al'), branchId, clientId: client.id, productId: dress.id, orderId: o.id, tailorId: tailor.id, tasks: s.alteration.tasks,
-        measurements: { ...client.measurements },
-        fittings: s.alteration.fittings.map(([d, time]) => ({ id: id('f'), date: day(d), time, done: day(d) < today })),
-        dueDate: day(s.alteration.due), price: s.alteration.price, status: s.alteration.status, createdAt: ts(addDays(created, 1)),
-      }
-      db.alterations.push(alt)
-      o.charges.push({ id: id('ch'), kind: 'alteration', amount: alt.price, date: addDays(created, 1) })
-      for (const f of alt.fittings) appointment(client, 'fitting', f.date, f.time ?? '15:00', 60, [dress.id], tailor.id)
-    }
+    for (const [d, time] of s.fittings ?? []) appointment(client, 'fitting', day(d), time, 60, [dress.id])
 
     const total = orderTotal(o)
     o.installments = buildPlan(total, round(total * s.deposit), s.installments, created, addDays(pickup, -1))
@@ -404,34 +412,23 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
   // Sharlin Lola
   book({ client: 'madina', type: 'rental', dress: 't1', created: -95, wedding: -62, pickup: -63, ret: -60, stage: 'done', deposit: 0.4, installments: 1, extras: ['t4'] })
   book({ client: 'madina', type: 'rental', dress: 't3', created: -70, wedding: -58, pickup: -59, ret: -57, stage: 'done', deposit: 0.5, installments: 0 })
-  book({
-    client: 'nigora', type: 'sale', dress: 't1', created: -120, wedding: -30, pickup: -33, stage: 'done', deposit: 0.3, installments: 2, extras: ['t5', 't6'],
-    alteration: { status: 'delivered', due: -35, price: 600_000, tasks: 'Belini 2 sm toraytirish, etakni 4 sm qisqartirish', fittings: [[-60, '14:00'], [-36, '16:30']] },
-  })
+  book({ client: 'nigora', type: 'sale', dress: 't1', created: -120, wedding: -30, pickup: -33, stage: 'done', deposit: 0.3, installments: 2, extras: ['t5', 't6'], fittings: [[-60, '14:00'], [-36, '16:30']] })
   book({ client: 'sevinch', type: 'rental', dress: 't1', created: -40, wedding: -2, pickup: -3, ret: 0, stage: 'out', deposit: 0.4, installments: 1, extras: ['t4', 't8'] })
   book({
     client: 'shahzoda', type: 'rental', dress: 't1', created: -25, wedding: 1, pickup: 0, ret: 3, stage: 'booked', deposit: 0.3, installments: 2,
-    unpaid: [2], payToday: { method: 'transfer', share: 0.5 }, extras: ['t7'],
-    alteration: { status: 'ready', due: -1, price: 300_000, tasks: "Etakni vaqtincha 3 sm ko'tarish", fittings: [[-1, '16:00']] },
+    unpaid: [2], payToday: { method: 'transfer', share: 0.5 }, extras: ['t7'], fittings: [[-1, '16:00']],
   })
-  book({
-    client: 'kamola', type: 'sale', dress: 't1', created: -50, wedding: 24, pickup: 20, stage: 'booked', deposit: 0.3, installments: 2,
-    alteration: { status: 'fitting', due: 18, price: 900_000, tasks: 'Korsetni moslash, yengini qisqartirish', fittings: [[-10, '14:00'], [0, '15:00'], [10, '15:00']] },
-  })
+  book({ client: 'kamola', type: 'sale', dress: 't1', created: -50, wedding: 24, pickup: 20, stage: 'booked', deposit: 0.3, installments: 2, fittings: [[-10, '14:00'], [0, '15:00'], [10, '15:00']] })
   book({ client: 'kamola', type: 'rental', dress: 't2', created: 0, wedding: 30, pickup: 29, ret: 31, stage: 'booked', deposit: 0.5, installments: 0, method: 'cash' })
 
   // Sharlin Cola
   book({ client: 'dilfuza', type: 'rental', dress: 't1', created: -80, wedding: -41, pickup: -42, ret: -39, stage: 'done', late: 1, damage: 500_000, deposit: 0.4, installments: 1 })
-  book({
-    client: 'malika', type: 'sale', dress: 't1', created: -150, wedding: -75, pickup: -78, stage: 'done', deposit: 0.3, installments: 3, extras: ['t5', 't4'],
-    alteration: { status: 'delivered', due: -80, price: 700_000, tasks: "Ko'krak qismini moslash, shleyfga ilgak tikish", fittings: [[-100, '13:00'], [-82, '15:30']] },
-  })
+  book({ client: 'malika', type: 'sale', dress: 't1', created: -150, wedding: -75, pickup: -78, stage: 'done', deposit: 0.3, installments: 3, extras: ['t5', 't4'], fittings: [[-100, '13:00'], [-82, '15:30']] })
   book({ client: 'malika', type: 'rental', dress: 't2', created: -20, wedding: -10, pickup: -11, ret: -9, stage: 'done', deposit: 1, installments: 0 })
   book({ client: 'zarina', type: 'rental', dress: 't1', created: -35, wedding: -5, pickup: -6, ret: -3, stage: 'out', deposit: 0.4, installments: 1, extras: ['t4'] })
   book({
     client: 'lobar', type: 'rental', dress: 't1', created: -30, wedding: 3, pickup: 2, ret: 5, stage: 'booked', deposit: 0.3, installments: 2,
-    payToday: { method: 'card', share: 0.5 }, extras: ['t8'],
-    alteration: { status: 'in_progress', due: 1, price: 200_000, tasks: 'Belini vaqtincha toraytirish', fittings: [[1, '11:00']] },
+    payToday: { method: 'card', share: 0.5 }, extras: ['t8'], fittings: [[1, '11:00']],
   })
   book({ client: 'aziza', type: 'rental', dress: 't1', created: 0, wedding: 45, pickup: 44, ret: 47, stage: 'booked', deposit: 0.3, installments: 1, method: 'click', extras: ['t4', 't7'] })
 
@@ -453,33 +450,12 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
       p.status = 'sold'
       p.quantity = 0
     } else if (mine.some((o) => o.type === 'rental' && o.status === 'picked_up')) p.status = 'rented'
-    else if (db.alterations.some((a) => a.productId === p.id && ['pending', 'in_progress', 'fitting'].includes(a.status))) p.status = 'alteration'
     else if (mine.some((o) => o.status === 'booked')) p.status = 'reserved'
   }
   for (const b of branches) {
     const resting = db.products.find((p) => p.branchId === b.id && p.typeId === 't1' && p.status === 'available')
     if (resting) resting.status = 'cleaning'
   }
-
-  // ---------- leads ----------
-  const lead = (branchId: ID, name: string, stage: Lead['stage'], created: number, extra: Partial<Lead> = {}) => {
-    db.leads.push({
-      id: id('l'), branchId, name, phone: phone(), source: 'instagram', interest: 'rent', stage,
-      staffId: pick(staffOf(branchId, 'sales', 'stylist')).id, createdAt: isoAt(day(created), int(10, 18), 15), ...extra,
-    })
-  }
-  const kamola = clients.get('kamola')!
-  const aziza = clients.get('aziza')!
-  lead('b1', 'Gulnoza Hamidova', 'new', -1, { weddingDate: day(60), notes: "Instagram'dagi reklamadan yozdi" })
-  lead('b1', 'Rayhona Salimova', 'new', 0, { source: 'telegram', interest: 'buy', weddingDate: day(90), budget: 25_000_000 })
-  lead('b1', 'Sitora Normatova', 'contacted', -5, { source: 'referral', weddingDate: day(40), notes: 'Dugonasi tavsiya qildi' })
-  lead('b1', kamola.name, 'won', -55, { phone: kamola.phone, source: kamola.source, interest: 'buy', clientId: kamola.id, weddingDate: kamola.weddingDate })
-  lead('b1', 'Barno Ahmedova', 'lost', -20, { source: 'website', interest: 'undecided', notes: "Narxlarni so'radi" })
-  lead('b2', 'Mohinur Jurayeva', 'new', 0, { weddingDate: day(75) })
-  lead('b2', 'Diyora Bakirova', 'contacted', -4, { source: 'telegram', interest: 'buy', budget: 30_000_000, notes: "Pishiq ko'ylak qidiryapti" })
-  lead('b2', 'Iroda Hamidova', 'appointment', -6, { weddingDate: day(50) })
-  lead('b2', aziza.name, 'won', -3, { phone: aziza.phone, source: aziza.source, clientId: aziza.id, weddingDate: aziza.weddingDate })
-  lead('b2', 'Ozoda Fayzullayeva', 'lost', -18, { source: 'referral', interest: 'undecided' })
 
   // ---------- SMS sent yesterday for today's visits ----------
   for (const a of db.appointments.filter((x) => x.date === today && x.type !== 'pickup' && x.type !== 'return')) {
@@ -488,7 +464,7 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
     const text = DEFAULT_TEMPLATES[0].text[c.lang]
       .replace('{name}', c.name.split(' ')[0]).replace('{date}', dotDate(a.date)).replace('{time}', a.time)
       .replace('{store}', db.settings.storeName).replace('{phone}', branch.phone)
-    db.smsLog.push({ id: id('sm'), branchId: a.branchId, clientId: c.id, phone: c.phone, type: 'appointment', text, refKey: `appointment:${a.id}`, sentAt: isoAt(day(-1), 18), sentBy: 'auto' })
+    db.smsLog.push({ id: id('sm'), branchId: a.branchId, clientId: c.id, phone: c.phone, type: 'appointment', text, refKey: `appointment:${a.id}`, status: 'logged', sentAt: isoAt(day(-1), 18), sentBy: 'auto' })
   }
 
   db.clients.sort((a, b) => b.createdAt.localeCompare(a.createdAt))

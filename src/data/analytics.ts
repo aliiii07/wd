@@ -43,7 +43,7 @@ export function periodRange(key: PeriodKey, today: string): Period {
   }
 }
 
-export type Slice = Pick<DB, 'orders' | 'payments' | 'clients' | 'leads' | 'products' | 'appointments' | 'alterations' | 'productTypes' | 'settings'>
+export type Slice = Pick<DB, 'orders' | 'payments' | 'clients' | 'products' | 'appointments' | 'productTypes' | 'settings'>
 
 export function sliceFor(db: DB, branchIds: ID[] | 'all'): Slice {
   const keep = <T extends { branchId: ID }>(arr: T[]) => (branchIds === 'all' ? arr : arr.filter((x) => branchIds.includes(x.branchId)))
@@ -51,10 +51,8 @@ export function sliceFor(db: DB, branchIds: ID[] | 'all'): Slice {
     orders: keep(db.orders),
     payments: keep(db.payments),
     clients: keep(db.clients),
-    leads: keep(db.leads),
     products: keep(db.products),
     appointments: keep(db.appointments),
-    alterations: keep(db.alterations),
     productTypes: db.productTypes,
     settings: db.settings,
   }
@@ -75,9 +73,8 @@ export interface Metrics {
   securityHeld: number
   utilization: number
   newClients: number
-  leads: number
-  leadsWon: number
-  conversion: number
+  /** Completed viewings in the period whose client went on to book, in percent. */
+  visitConversion: number
   activeRentals: number
   dresses: number
 }
@@ -107,8 +104,8 @@ export function metrics(s: Slice, from: string, to: string, today: string): Metr
     const n = rentedDaysIn(o, from, end)
     if (n) rentedDays += n * o.items.filter((i) => rentableIds.has(i.productId)).length
   }
-  const leads = s.leads.filter((l) => inRange(dateOf(l.createdAt), from, to))
-  const leadsWon = leads.filter((l) => l.stage === 'won').length
+  const booked = new Set(s.orders.filter((o) => o.status !== 'cancelled').map((o) => o.clientId))
+  const viewings = s.appointments.filter((a) => a.type === 'viewing' && a.status === 'completed' && inRange(a.date, from, to))
   return {
     revenue,
     orders: orders.length,
@@ -122,9 +119,7 @@ export function metrics(s: Slice, from: string, to: string, today: string): Metr
     securityHeld,
     utilization: rentable.length ? (rentedDays / (rentable.length * days)) * 100 : 0,
     newClients: s.clients.filter((c) => inRange(dateOf(c.createdAt), from, to)).length,
-    leads: leads.length,
-    leadsWon,
-    conversion: leads.length ? (leadsWon / leads.length) * 100 : 0,
+    visitConversion: viewings.length ? (viewings.filter((v) => booked.has(v.clientId)).length / viewings.length) * 100 : 0,
     activeRentals: s.orders.filter((o) => o.type === 'rental' && o.status === 'picked_up').length,
     dresses: s.products.filter((p) => kind.get(p.typeId) === 'dress' && p.status !== 'sold').length,
   }
@@ -178,7 +173,7 @@ export function typeBreakdown(s: Slice, from: string, to: string) {
 
 export function statusBreakdown(s: Slice): Record<ProductStatus, number> {
   const kind = new Map(s.productTypes.map((t) => [t.id, t.kind]))
-  const out = { available: 0, reserved: 0, rented: 0, sold: 0, alteration: 0, cleaning: 0 } as Record<ProductStatus, number>
+  const out = { available: 0, reserved: 0, rented: 0, sold: 0, cleaning: 0 } as Record<ProductStatus, number>
   for (const p of s.products) if (kind.get(p.typeId) === 'dress') out[p.status] += 1
   return out
 }
@@ -216,11 +211,10 @@ export interface StaffRow {
   volume: number
   commission: number
   appointments: number
-  alterations: number
 }
 
 export function staffPerformance(s: Slice, staff: DB['staff'], from: string, to: string): Map<ID, StaffRow> {
-  const out = new Map<ID, StaffRow>(staff.map((x) => [x.id, { orders: 0, volume: 0, commission: 0, appointments: 0, alterations: 0 }]))
+  const out = new Map<ID, StaffRow>(staff.map((x) => [x.id, { orders: 0, volume: 0, commission: 0, appointments: 0 }]))
   const rate = new Map(staff.map((x) => [x.id, x.commissionRate]))
   for (const o of liveOrders(s, from, to)) {
     const row = o.staffId ? out.get(o.staffId) : undefined
@@ -234,12 +228,6 @@ export function staffPerformance(s: Slice, staff: DB['staff'], from: string, to:
     if (a.status === 'completed' && a.staffId && inRange(a.date, from, to)) {
       const row = out.get(a.staffId)
       if (row) row.appointments += 1
-    }
-  }
-  for (const a of s.alterations) {
-    if (a.tailorId && (a.status === 'ready' || a.status === 'delivered') && inRange(a.dueDate, from, to)) {
-      const row = out.get(a.tailorId)
-      if (row) row.alterations += 1
     }
   }
   return out

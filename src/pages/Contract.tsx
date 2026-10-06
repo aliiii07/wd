@@ -30,6 +30,11 @@ export default function Contract() {
   const branch = L.branch.get(order.branchId)
   const value = order.items.reduce((s, i) => s + (L.product.get(i.productId)?.salePrice ?? i.price) * i.qty, 0)
   const rental = order.type === 'rental'
+  const st = db.settings
+  // Legal details from Settings → Contract, printed only when filled in.
+  const requisites = ([['set.inn', st.inn], ['set.bankName', st.bankName], ['set.bankAccount', st.bankAccount], ['set.mfo', st.mfo], ['set.phone', st.phone]] as [DictKey, string | undefined][])
+    .filter(([, v]) => v?.trim())
+    .map(([k, v]) => [k, v!.trim()] as [DictKey, string])
 
   return (
     <Page title={t('ord.contract')} crumb={order.number}>
@@ -85,10 +90,10 @@ export default function Contract() {
             <>
               <li>{tr('ct.s1', { pickup: dotDate(order.pickupDate) })}</li>
               <li>{tr('ct.s2')}</li>
-              <li>{tr('ct.s3')}</li>
               <li>{tr('ct.s4')}</li>
             </>
           )}
+          {db.settings.contractNote?.trim() && <li>{db.settings.contractNote.trim()}</li>}
         </ol>
         <h3 style={{ marginTop: 22, fontSize: 15 }}>{tr('ct.payments')}</h3>
         <table>
@@ -101,7 +106,11 @@ export default function Contract() {
           </tbody>
         </table>
         <div className="sign">
-          <div>{tr('ct.signBoutique')}: {db.settings.storeName}<br />_____________ ({tr('ct.signature')})</div>
+          <div>
+            {tr('ct.signBoutique')}: {db.settings.legalName?.trim() || db.settings.storeName}
+            {requisites.map(([k, v]) => <span key={k} className="req">{tr(k)}: {v}</span>)}
+            <br />_____________ ({tr('ct.signature')})
+          </div>
           <div>{tr('ct.signClient')}: {client.name}<br />_____________ ({tr('ct.signature')})</div>
         </div>
       </article>

@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Ban, CalendarHeart, CircleDollarSign, FileText, ListChecks, Plus, ReceiptText, Scissors, ShieldCheck, Wallet,
+  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Ban, CalendarHeart, CircleDollarSign, FileText, ListChecks, Plus, ReceiptText, ShieldCheck, Wallet,
 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
@@ -12,7 +12,7 @@ import { diffDays, todayStr } from '../lib/date'
 import type { ChargeKind, Order, PaymentMethod, ProductStatus } from '../data/types'
 import { Page } from '../components/Layout'
 import { MethodPicker, PaymentModal } from '../components/forms'
-import { altTone, Chip, Empty, Field, FormFooter, Modal, MoneyInput, orderTone, Progress, useConfirm, useToast } from '../components/ui'
+import { Chip, Empty, Field, FormFooter, Modal, MoneyInput, orderTone, Progress, useConfirm, useToast } from '../components/ui'
 
 export default function OrderDetail() {
   const { id } = useParams()
@@ -38,7 +38,6 @@ export default function OrderDetail() {
   const m = orderMoney(order, pays)
   const st = displayStatus(order, today)
   const plan = planRows(order, m.paid, today)
-  const alts = db.alterations.filter((a) => a.orderId === order.id)
   const countdown = order.weddingDate ? diffDays(today, order.weddingDate) : null
   const conflicts = order.status === 'booked'
     ? order.items.flatMap((i) => conflictsFor(db, i.productId, order.pickupDate, order.returnDate ?? '9999-12-31', order.id).map((o) => o.number))
@@ -128,22 +127,6 @@ export default function OrderDetail() {
             </div>
           </section>
 
-          {alts.length > 0 && (
-            <section className="card">
-              <div className="card-head"><h3><Scissors />{t('al.title')}</h3></div>
-              <div className="list">
-                {alts.map((a) => (
-                  <div className="list-row click" key={a.id} onClick={() => nav('/alterations')}>
-                    <div className="grow">
-                      <div className="title">{a.tasks}</div>
-                      <div className="meta">{L.staff.get(a.tailorId ?? '')?.name ?? '—'} · {t('al.due')}: {date(a.dueDate)} · {t('al.fittings')}: {a.fittings.filter((f) => f.done).length}/{a.fittings.length}</div>
-                    </div>
-                    <Chip tone={altTone[a.status]}>{t(`alt.${a.status}` as DictKey)}</Chip>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
         </div>
 
         <aside className="stack" style={{ gap: 20 }}>
@@ -291,7 +274,7 @@ function ReturnModal({ open, onClose, order, held }: { open: boolean; onClose: (
         <Field label={t('ord.damage')} htmlFor="rt-dmg"><MoneyInput id="rt-dmg" value={damage} onChange={setDamage} /></Field>
         <Field label={t('ord.afterReturn')} htmlFor="rt-status">
           <select id="rt-status" className="select" value={status} onChange={(e) => setStatus(e.target.value as ProductStatus)}>
-            {(['cleaning', 'available', 'alteration'] as ProductStatus[]).map((s) => <option key={s} value={s}>{t(`status.${s}` as DictKey)}</option>)}
+            {(['cleaning', 'available'] as ProductStatus[]).map((s) => <option key={s} value={s}>{t(`status.${s}` as DictKey)}</option>)}
           </select>
         </Field>
         {damage > 0 && (
@@ -316,7 +299,7 @@ function ChargeModal({ open, onClose, order }: { open: boolean; onClose: () => v
   const { t } = useI18n()
   const { mutate } = useStore()
   const toast = useToast()
-  const [kind, setKind] = useState<ChargeKind>('alteration')
+  const [kind, setKind] = useState<ChargeKind>('damage')
   const [amount, setAmount] = useState(0)
   const [note, setNote] = useState('')
   const save = () => {
@@ -331,7 +314,7 @@ function ChargeModal({ open, onClose, order }: { open: boolean; onClose: () => v
     <Modal open={open} onClose={onClose} title={t('ord.addCharge')} size="narrow" footer={<FormFooter onCancel={onClose} onSave={save} disabled={amount <= 0} />}>
       <Field label={t('c.type')} htmlFor="ch-kind">
         <select id="ch-kind" className="select" value={kind} onChange={(e) => setKind(e.target.value as ChargeKind)}>
-          {(['alteration', 'damage', 'late_fee', 'other'] as ChargeKind[]).map((k) => <option key={k} value={k}>{t(`charge.${k}` as DictKey)}</option>)}
+          {(['damage', 'late_fee', 'other'] as ChargeKind[]).map((k) => <option key={k} value={k}>{t(`charge.${k}` as DictKey)}</option>)}
         </select>
       </Field>
       <Field label={t('c.amount')} htmlFor="ch-amount"><MoneyInput id="ch-amount" value={amount} onChange={setAmount} /></Field>

@@ -44,7 +44,7 @@ export default function OrderNew() {
   const [lateFee, setLateFee] = useState(db.settings.lateFeePerDay)
   const [depositTouched, setDepositTouched] = useState(false)
   const [depositInput, setDeposit] = useState(0)
-  const [nInst, setNInst] = useState(1)
+  const [nInst, setNInst] = useState(db.settings.defaultInstallments || 1)
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [payNow, setPayNow] = useState(true)
   const [notes, setNotes] = useState('')
@@ -83,7 +83,7 @@ export default function OrderNew() {
 
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0)
   const total = Math.max(0, subtotal - discount)
-  const deposit = depositTouched ? Math.min(depositInput, total) : Math.round((total * 0.3) / 100_000) * 100_000
+  const deposit = depositTouched ? Math.min(depositInput, total) : Math.round((total * (db.settings.defaultDepositPercent ?? 30)) / 100 / 100_000) * 100_000
   const plan = buildPlan(total, deposit, nInst, today, addDays(pickup, -1))
   const staff = scoped.staff.filter((s) => s.active && (!branchId || s.branchId === branchId) && (s.role === 'sales' || s.role === 'manager' || s.role === 'stylist'))
 

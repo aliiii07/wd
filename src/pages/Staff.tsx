@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, HandCoins, Pencil, Plus, Trash2, UserCog } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { CalendarDays, ChevronLeft, ChevronRight, HandCoins, Plus, UserCog } from 'lucide-react'
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { weekdayShort } from '../i18n/dict'
@@ -10,10 +11,13 @@ import { uid } from '../lib/storage'
 import type { Staff, StaffRole } from '../data/types'
 import { Page } from '../components/Layout'
 import { useBranchChoice } from '../components/forms'
-import { Avatar, Chip, Empty, Field, FormFooter, Modal, MoneyInput, Segmented, useConfirm, useToast } from '../components/ui'
+import { Avatar, Chip, Empty, Field, FormFooter, Modal, MoneyInput, Segmented, useToast } from '../components/ui'
+import { useFileUrl } from '../lib/files'
+import { ROLES, ROLE_TONE } from '../components/roles'
 
 type Tab = 'list' | 'schedule' | 'commissions'
-const ROLES: StaffRole[] = ['manager', 'stylist', 'tailor', 'sales', 'admin']
+/** Default commission when a role is picked; only people who sell earn one. */
+const ROLE_COMMISSION: Partial<Record<StaffRole, number>> = { sales: 4, stylist: 2, manager: 1, makeup: 0, hair: 0 }
 
 export default function StaffPage() {
   const { t } = useI18n()
@@ -29,60 +33,57 @@ export default function StaffPage() {
 
 function List() {
   const { t, money, lang } = useI18n()
-  const { db, scope, remove } = useStore()
+  const { scope } = useStore()
   const scoped = useScoped()
   const L = useLookups()
-  const confirm = useConfirm()
-  const toast = useToast()
+  const nav = useNavigate()
   const [role, setRole] = useState('')
-  const [edit, setEdit] = useState<Staff | undefined>()
   const [open, setOpen] = useState(false)
   const list = scoped.staff.filter((s) => !role || s.role === role).sort((a, b) => Number(b.active) - Number(a.active) || ROLES.indexOf(a.role) - ROLES.indexOf(b.role))
-  const referenced = new Set([...db.orders.map((o) => o.staffId), ...db.appointments.map((a) => a.staffId), ...db.alterations.map((a) => a.tailorId)])
-
-  const del = async (s: Staff) => {
-    if (!(await confirm(t('c.confirmDelete'), { danger: true, confirmLabel: t('c.delete') }))) return
-    remove('staff', s.id)
-    toast(t('c.deleted'))
-  }
+  const present = ROLES.filter((r) => scoped.staff.some((s) => s.role === r))
 
   return (
     <section className="card">
       <div className="toolbar">
-        <Segmented value={role} onChange={setRole} options={[{ value: '', label: t('c.all') }, ...ROLES.map((r) => ({ value: r, label: t(`staffRole.${r}` as DictKey) }))]} />
+        <select id="st-role-filter" className="select" value={role} onChange={(e) => setRole(e.target.value)} aria-label={t('st.role')}>
+          <option value="">{t('st.role')}: {t('c.all').toLowerCase()}</option>
+          {present.map((r) => <option key={r} value={r}>{t(`staffRole.${r}` as DictKey)}</option>)}
+        </select>
+        <span className="muted small">{list.length}</span>
         <span className="spacer" />
-        <button className="btn btn-primary" onClick={() => { setEdit(undefined); setOpen(true) }}><Plus />{t('st.add')}</button>
+        <button className="btn btn-primary" onClick={() => setOpen(true)}><Plus />{t('st.add')}</button>
       </div>
       {list.length === 0 ? <Empty icon={<UserCog />} title={t('st.empty')} /> : (
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr><th>{t('c.staff')}</th><th>{t('st.role')}</th>{scope === 'all' && <th>{t('c.branch')}</th>}<th>{t('st.workDays')}</th><th>{t('st.shift')}</th><th className="num">{t('st.commissionRate')}</th><th className="num">{t('st.salary')}</th><th>{t('c.status')}</th><th /></tr>
+              <tr><th>{t('c.staff')}</th><th>{t('st.role')}</th>{scope === 'all' && <th>{t('c.branch')}</th>}<th>{t('st.workDays')}</th><th>{t('st.shift')}</th><th className="num">{t('st.commissionRate')}</th><th className="num">{t('st.salary')}</th><th>{t('c.status')}</th></tr>
             </thead>
             <tbody>
               {list.map((s) => (
-                <tr key={s.id}>
-                  <td><div className="person"><Avatar name={s.name} /><div><div className="cell-main">{s.name}</div><div className="cell-sub num">{s.phone}</div></div></div></td>
-                  <td><Chip tone={s.role === 'tailor' ? 'info' : s.role === 'stylist' ? 'gold' : s.role === 'manager' ? 'dark' : 'neutral'} plain>{t(`staffRole.${s.role}` as DictKey)}</Chip></td>
+                <tr key={s.id} className="click" onClick={() => nav(`/staff/${s.id}`)}>
+                  <td><div className="person"><StaffAvatar staff={s} /><div><div className="cell-main">{s.name}</div><div className="cell-sub num">{s.phone}</div></div></div></td>
+                  <td><Chip tone={ROLE_TONE[s.role]} plain>{t(`staffRole.${s.role}` as DictKey)}</Chip></td>
                   {scope === 'all' && <td className="soft">{L.branch.get(s.branchId)?.name}</td>}
                   <td className="soft small">{s.workDays.slice().sort().map((d) => weekdayShort[lang][d]).join(' · ')}</td>
                   <td className="num nowrap">{s.shiftStart}–{s.shiftEnd}</td>
                   <td className="num">{s.commissionRate}%</td>
                   <td className="num">{money(s.salary)}</td>
                   <td><Chip tone={s.active ? 'good' : 'neutral'}>{s.active ? t('st.active') : t('st.inactive')}</Chip></td>
-                  <td className="right nowrap">
-                    <button className="icon-btn" title={t('c.edit')} onClick={() => { setEdit(s); setOpen(true) }}><Pencil /></button>
-                    {!referenced.has(s.id) && <button className="icon-btn" title={t('c.delete')} onClick={() => del(s)}><Trash2 /></button>}
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <StaffModal open={open} onClose={() => setOpen(false)} staff={edit} />
+      <StaffModal open={open} onClose={() => setOpen(false)} onSaved={(id) => nav(`/staff/${id}`)} />
     </section>
   )
+}
+
+export function StaffAvatar({ staff, lg }: { staff: Staff; lg?: boolean }) {
+  const url = useFileUrl(staff.photo)
+  return <Avatar name={staff.name} src={url} lg={lg} />
 }
 
 function Schedule() {
@@ -112,7 +113,7 @@ function Schedule() {
             <tr>
               <th>{t('c.staff')}</th>
               {days.map((d, i) => (
-                <th key={d} className="num" style={d === today ? { background: 'var(--gold-soft)', color: 'var(--gold-ink)' } : undefined}>
+                <th key={d} className="num" style={d === today ? { background: 'var(--accent-soft)', color: 'var(--accent-ink)' } : undefined}>
                   {weekdayShort[lang][i]} · {dateShort(d)}
                 </th>
               ))}
@@ -202,7 +203,7 @@ function Commissions() {
   )
 }
 
-function StaffModal({ open, onClose, staff }: { open: boolean; onClose: () => void; staff?: Staff }) {
+export function StaffModal({ open, onClose, staff, onSaved }: { open: boolean; onClose: () => void; staff?: Staff; onSaved?: (id: string) => void }) {
   const { t, lang } = useI18n()
   const { upsert } = useStore()
   const toast = useToast()
@@ -221,37 +222,51 @@ function StaffModal({ open, onClose, staff }: { open: boolean; onClose: () => vo
   const save = () => {
     setTried(true)
     if (!valid) return
-    upsert('staff', { ...s, id: s.id || uid(), branchId, name: s.name.trim() })
+    const saved = { ...s, id: s.id || uid(), branchId, name: s.name.trim() }
+    upsert('staff', saved)
     toast(t('c.saved'))
+    onSaved?.(saved.id)
     onClose()
   }
   const toggleDay = (d: number) => setS({ ...s, workDays: s.workDays.includes(d) ? s.workDays.filter((x) => x !== d) : [...s.workDays, d] })
+  const setRole = (role: StaffRole) => setS({ ...s, role, commissionRate: staff ? s.commissionRate : ROLE_COMMISSION[role] ?? 0 })
   return (
     <Modal open={open} onClose={onClose} title={staff ? t('st.edit') : t('st.add')} size="wide" footer={<FormFooter onCancel={onClose} onSave={save} />}>
-      <div className="form-grid g3">
-        <Field label={t('c.fullName')} htmlFor="st-name" error={tried && s.name.trim().length < 2 ? t('c.required') : undefined}>
-          <input id="st-name" className="input" value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} autoFocus />
-        </Field>
-        <Field label={t('c.phone')} htmlFor="st-phone"><input id="st-phone" className="input num" value={s.phone} onChange={(e) => setS({ ...s, phone: e.target.value })} /></Field>
-        <Field label={t('st.role')} htmlFor="st-role">
-          <select id="st-role" className="select" value={s.role} onChange={(e) => setS({ ...s, role: e.target.value as StaffRole })}>
-            {ROLES.map((r) => <option key={r} value={r}>{t(`staffRole.${r}` as DictKey)}</option>)}
-          </select>
-        </Field>
-        {branch.field}
-        <Field label={t('st.commissionRate')} htmlFor="st-rate">
-          <input id="st-rate" className="input num" type="number" min={0} max={50} step={0.5} value={s.commissionRate} onChange={(e) => setS({ ...s, commissionRate: Math.max(0, Number(e.target.value)) })} />
-        </Field>
-        <Field label={t('st.salary')} htmlFor="st-salary"><MoneyInput id="st-salary" value={s.salary} onChange={(v) => setS({ ...s, salary: v })} /></Field>
-        <Field label={t('st.shiftStart')} htmlFor="st-start"><input id="st-start" type="time" className="input" value={s.shiftStart} onChange={(e) => setS({ ...s, shiftStart: e.target.value })} /></Field>
-        <Field label={t('st.shiftEnd')} htmlFor="st-end"><input id="st-end" type="time" className="input" value={s.shiftEnd} onChange={(e) => setS({ ...s, shiftEnd: e.target.value })} /></Field>
-        <Field label={t('st.hiredAt')} htmlFor="st-hired"><input id="st-hired" type="date" className="input" value={s.hiredAt} onChange={(e) => setS({ ...s, hiredAt: e.target.value })} /></Field>
-        <Field label={t('st.workDays')} className="span-2">
-          <div className="day-picks">
-            {weekdayShort[lang].map((w, i) => <button type="button" key={w} className={s.workDays.includes(i) ? 'on' : ''} onClick={() => toggleDay(i)}>{w}</button>)}
-          </div>
-        </Field>
-        <label className="check"><input type="checkbox" checked={s.active} onChange={(e) => setS({ ...s, active: e.target.checked })} />{t('st.active')}</label>
+      <div className="form-section">
+        <span className="eyebrow">{t('st.personal')}</span>
+        <div className="form-grid g3">
+          <Field label={t('c.fullName')} htmlFor="st-name" error={tried && s.name.trim().length < 2 ? t('c.required') : undefined}>
+            <input id="st-name" className="input" value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} autoFocus />
+          </Field>
+          <Field label={t('c.phone')} htmlFor="st-phone"><input id="st-phone" className="input num" value={s.phone} onChange={(e) => setS({ ...s, phone: e.target.value })} /></Field>
+          <Field label={t('st.birthday')} htmlFor="st-birthday"><input id="st-birthday" type="date" className="input" value={s.birthday ?? ''} onChange={(e) => setS({ ...s, birthday: e.target.value || undefined })} /></Field>
+          <Field label={t('c.address')} htmlFor="st-address" className="span-2"><input id="st-address" className="input" value={s.address ?? ''} onChange={(e) => setS({ ...s, address: e.target.value })} /></Field>
+          {branch.field}
+        </div>
+      </div>
+      <div className="form-section">
+        <span className="eyebrow">{t('st.work')}</span>
+        <div className="form-grid g3">
+          <Field label={t('st.role')} htmlFor="st-role">
+            <select id="st-role" className="select" value={s.role} onChange={(e) => setRole(e.target.value as StaffRole)}>
+              {ROLES.map((r) => <option key={r} value={r}>{t(`staffRole.${r}` as DictKey)}</option>)}
+            </select>
+          </Field>
+          <Field label={t('st.commissionRate')} htmlFor="st-rate">
+            <input id="st-rate" className="input num" type="number" min={0} max={50} step={0.5} value={s.commissionRate} onChange={(e) => setS({ ...s, commissionRate: Math.max(0, Number(e.target.value)) })} />
+          </Field>
+          <Field label={t('st.salary')} htmlFor="st-salary"><MoneyInput id="st-salary" value={s.salary} onChange={(v) => setS({ ...s, salary: v })} /></Field>
+          <Field label={t('st.shiftStart')} htmlFor="st-start"><input id="st-start" type="time" className="input" value={s.shiftStart} onChange={(e) => setS({ ...s, shiftStart: e.target.value })} /></Field>
+          <Field label={t('st.shiftEnd')} htmlFor="st-end"><input id="st-end" type="time" className="input" value={s.shiftEnd} onChange={(e) => setS({ ...s, shiftEnd: e.target.value })} /></Field>
+          <Field label={t('st.hiredAt')} htmlFor="st-hired"><input id="st-hired" type="date" className="input" value={s.hiredAt} onChange={(e) => setS({ ...s, hiredAt: e.target.value })} /></Field>
+          <Field label={t('st.workDays')} className="span-2">
+            <div className="day-picks">
+              {weekdayShort[lang].map((w, i) => <button type="button" key={w} className={s.workDays.includes(i) ? 'on' : ''} onClick={() => toggleDay(i)}>{w}</button>)}
+            </div>
+          </Field>
+          <label className="check"><input type="checkbox" checked={s.active} onChange={(e) => setS({ ...s, active: e.target.checked })} />{t('st.active')}</label>
+          <Field label={t('c.notes')} htmlFor="st-notes" className="span-2"><input id="st-notes" className="input" value={s.notes ?? ''} onChange={(e) => setS({ ...s, notes: e.target.value })} /></Field>
+        </div>
       </div>
       {tried && !branchId && <div className="notice bad">{t('c.chooseBranch')}</div>}
     </Modal>

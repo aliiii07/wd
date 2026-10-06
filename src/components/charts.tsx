@@ -5,14 +5,17 @@ import type { DictKey } from '../i18n/dict'
 import { METHOD_GROUPS, methodGroupTotals } from '../data/analytics'
 import type { PaymentMethod } from '../data/types'
 
-/** Validated categorical order (gold, plum, jade, rose); color follows the entity, never its rank. */
-export const SERIES = ['#b8862b', '#5e4a9e', '#2fa58a', '#c0405f']
+/**
+ * Validated categorical order (gold, plum, jade, wine), with separate light and dark steps defined
+ * as --s1…--s4 in styles.css. Colour follows the entity, never its rank.
+ */
+export const SERIES = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)']
 export const seriesColor = (i: number) => SERIES[i % SERIES.length]
-/** Neutral for folded "other" slices, deliberately lighter and greyer than every series colour. */
-export const OTHER_COLOR = '#d3ccbf'
+/** Neutral for folded "other" slices, deliberately greyer than every series colour. */
+export const OTHER_COLOR = 'var(--s-other)'
 
-const axis = { fill: '#8a8374', fontSize: 11.5 }
-const GRID = '#ece6da'
+const axis = { fill: 'var(--text-3)', fontSize: 11.5 }
+const GRID = 'var(--line)'
 
 interface TipPayload { name?: string; value?: number; color?: string; dataKey?: string | number; payload?: Record<string, unknown> }
 
@@ -41,15 +44,15 @@ export function AreaTrend({ data, name, height = 260, money = true }: { data: { 
       <AreaChart data={data} margin={{ top: 10, right: 12, left: 4, bottom: 0 }}>
         <defs>
           <linearGradient id="goldWash" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#b8862b" stopOpacity={0.18} />
-            <stop offset="100%" stopColor="#b8862b" stopOpacity={0.02} />
+            <stop offset="0%" stopColor="var(--s1)" stopOpacity={0.2} />
+            <stop offset="100%" stopColor="var(--s1)" stopOpacity={0.02} />
           </linearGradient>
         </defs>
         <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={{ stroke: '#dcd3c1' }} minTickGap={16} />
+        <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={{ stroke: 'var(--line-2)' }} minTickGap={16} />
         <YAxis tick={axis} tickLine={false} axisLine={false} width={52} tickFormatter={(v) => (money ? compact(v) : num(v))} />
-        <Tooltip cursor={{ stroke: '#b8862b', strokeWidth: 1 }} content={<Tip fmt={money ? fmtMoney : num} />} />
-        <Area type="monotone" dataKey="value" name={name} stroke="#b8862b" strokeWidth={2} fill="url(#goldWash)" dot={false} activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2, fill: '#b8862b' }} />
+        <Tooltip cursor={{ stroke: 'var(--s1)', strokeWidth: 1 }} content={<Tip fmt={money ? fmtMoney : num} />} />
+        <Area type="monotone" dataKey="value" name={name} stroke="var(--s1)" strokeWidth={2} fill="url(#goldWash)" dot={false} activeDot={{ r: 5, stroke: 'var(--surface)', strokeWidth: 2, fill: 'var(--s1)' }} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   )
@@ -67,9 +70,9 @@ export function Columns({ data, series, height = 260, money = true, stacked }: {
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 10, right: 12, left: 4, bottom: 0 }} barGap={2} barCategoryGap="22%">
         <CartesianGrid stroke={GRID} vertical={false} />
-        <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={{ stroke: '#dcd3c1' }} minTickGap={8} />
+        <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={{ stroke: 'var(--line-2)' }} minTickGap={8} />
         <YAxis tick={axis} tickLine={false} axisLine={false} width={52} allowDecimals={false} tickFormatter={(v) => (money ? compact(v) : num(v))} />
-        <Tooltip cursor={{ fill: 'rgba(184,134,43,0.07)' }} content={<Tip fmt={money ? fmtMoney : num} />} />
+        <Tooltip cursor={{ fill: 'var(--accent-soft)' }} content={<Tip fmt={money ? fmtMoney : num} />} />
         {series.map((s, i) => (
           <Bar
             key={s.key}
@@ -79,8 +82,9 @@ export function Columns({ data, series, height = 260, money = true, stacked }: {
             maxBarSize={24}
             stackId={stacked ? 'a' : undefined}
             radius={stacked ? (i === series.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]) : [4, 4, 0, 0]}
-            stroke={stacked ? '#fff' : undefined}
+            stroke={stacked ? 'var(--surface)' : undefined}
             strokeWidth={stacked ? 1 : 0}
+            isAnimationActive={false}
           />
         ))}
       </BarChart>
@@ -102,7 +106,7 @@ export function Legend({ items }: { items: { name: string; color: string }[] }) 
 }
 
 /** Horizontal bars in HTML: best for ranked categories with long labels. */
-export function HBars({ rows, format, color = '#b8862b', max }: {
+export function HBars({ rows, format, color = 'var(--s1)', max }: {
   rows: { key: string; label: ReactNode; value: number; sub?: ReactNode; color?: string }[]
   format: (n: number) => string
   color?: string
@@ -203,11 +207,11 @@ export function Donut({ parts, format, centerFormat, centerLabel, emptyLabel, si
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             {total > 0 ? (
-              <Pie data={shown} dataKey="value" nameKey="label" innerRadius="66%" outerRadius="100%" startAngle={90} endAngle={-270} stroke="#fff" strokeWidth={2} isAnimationActive={false}>
+              <Pie data={shown} dataKey="value" nameKey="label" innerRadius="68%" outerRadius="100%" startAngle={90} endAngle={-270} stroke="var(--surface)" strokeWidth={2} isAnimationActive={false}>
                 {shown.map((p) => <Cell key={p.key} fill={p.color} />)}
               </Pie>
             ) : (
-              <Pie data={[{ key: 'empty', value: 1 }]} dataKey="value" innerRadius="66%" outerRadius="100%" stroke="none" fill="#efebe2" isAnimationActive={false} />
+              <Pie data={[{ key: 'empty', value: 1 }]} dataKey="value" innerRadius="68%" outerRadius="100%" stroke="none" fill="var(--surface-3)" isAnimationActive={false} />
             )}
             {total > 0 && <Tooltip content={<PieTip total={total} fmt={format} />} />}
           </PieChart>

@@ -12,12 +12,11 @@ import Contract from './pages/Contract'
 import Appointments from './pages/Appointments'
 import Clients from './pages/Clients'
 import ClientDetail from './pages/ClientDetail'
-import Leads from './pages/Leads'
 import Products from './pages/Products'
 import ProductDetail from './pages/ProductDetail'
-import Alterations from './pages/Alterations'
 import Payments from './pages/Payments'
 import StaffPage from './pages/Staff'
+import StaffDetail from './pages/StaffDetail'
 import Notifications from './pages/Notifications'
 import Branches from './pages/Branches'
 import SettingsPage from './pages/Settings'
@@ -53,12 +52,11 @@ export default function App() {
         <Route path="/appointments" element={<Appointments />} />
         <Route path="/clients" element={<Clients />} />
         <Route path="/clients/:id" element={<ClientDetail />} />
-        <Route path="/leads" element={<Leads />} />
         <Route path="/products" element={<Products />} />
         <Route path="/products/:id" element={<ProductDetail />} />
-        <Route path="/alterations" element={<Alterations />} />
         <Route path="/payments" element={<Payments />} />
         <Route path="/staff" element={<StaffPage />} />
+        <Route path="/staff/:id" element={<StaffDetail />} />
         <Route path="/notifications" element={<Notifications />} />
         {isFounder && <Route path="/branches" element={<Branches />} />}
         <Route path="/settings" element={<SettingsPage />} />

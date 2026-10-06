@@ -57,7 +57,7 @@ export interface ProductType {
   createdAt: string
 }
 
-export type ProductStatus = 'available' | 'reserved' | 'rented' | 'sold' | 'alteration' | 'cleaning'
+export type ProductStatus = 'available' | 'reserved' | 'rented' | 'sold' | 'cleaning'
 export type Condition = 'new' | 'excellent' | 'good' | 'fair' | 'damaged'
 export type DealMode = 'rent' | 'sale' | 'both'
 export type Silhouette = 'a_line' | 'ball_gown' | 'mermaid' | 'sheath' | 'princess' | 'empire' | 'short' | 'national'
@@ -84,23 +84,13 @@ export interface Product {
   securityDeposit: number
   /** Stock count; dresses are unique pieces (1), accessories can have many. */
   quantity: number
+  /** Stored photo ids (see lib/files); the first one is the cover. */
+  photos?: ID[]
   notes?: string
   createdAt: string
 }
 
-export interface Measurements {
-  bust?: number
-  waist?: number
-  hips?: number
-  height?: number
-  shoulder?: number
-  sleeve?: number
-  length?: number
-  shoe?: number
-  updatedAt?: string
-}
-
-export type LeadSource = 'instagram' | 'telegram' | 'referral' | 'walk_in' | 'website' | 'other'
+export type ClientSource = 'instagram' | 'telegram' | 'referral' | 'walk_in' | 'website' | 'other'
 
 export interface Client {
   id: ID
@@ -108,29 +98,9 @@ export interface Client {
   name: string
   phone: string
   weddingDate?: string
-  /** Language used for SMS reminders. */
+  /** Language used for SMS. */
   lang: Lang
-  source: LeadSource
-  measurements: Measurements
-  notes?: string
-  createdAt: string
-}
-
-export type LeadStage = 'new' | 'contacted' | 'appointment' | 'won' | 'lost'
-export type LeadInterest = 'rent' | 'buy' | 'undecided'
-
-export interface Lead {
-  id: ID
-  branchId: ID
-  name: string
-  phone: string
-  source: LeadSource
-  interest: LeadInterest
-  weddingDate?: string
-  budget?: number
-  stage: LeadStage
-  staffId?: ID
-  clientId?: ID
+  source: ClientSource
   notes?: string
   createdAt: string
 }
@@ -162,7 +132,7 @@ export interface OrderItem {
   qty: number
 }
 
-export type ChargeKind = 'late_fee' | 'damage' | 'alteration' | 'other'
+export type ChargeKind = 'late_fee' | 'damage' | 'other'
 
 export interface Charge {
   id: ID
@@ -223,33 +193,9 @@ export interface Payment {
   note?: string
 }
 
-export type AlterationStatus = 'pending' | 'in_progress' | 'fitting' | 'ready' | 'delivered'
-
-export interface Fitting {
-  id: ID
-  date: string
-  time?: string
-  notes?: string
-  done: boolean
-}
-
-export interface Alteration {
-  id: ID
-  branchId: ID
-  clientId: ID
-  productId: ID
-  orderId?: ID
-  tailorId?: ID
-  tasks: string
-  measurements: Measurements
-  fittings: Fitting[]
-  dueDate: string
-  price: number
-  status: AlterationStatus
-  createdAt: string
-}
-
-export type StaffRole = 'manager' | 'stylist' | 'tailor' | 'sales' | 'admin'
+export type StaffRole =
+  | 'manager' | 'stylist' | 'sales' | 'makeup' | 'hair' | 'tailor' | 'photographer'
+  | 'cashier' | 'admin' | 'cleaner' | 'driver' | 'security'
 
 export interface Staff {
   id: ID
@@ -266,14 +212,37 @@ export interface Staff {
   shiftEnd: string
   hiredAt: string
   active: boolean
+  photo?: ID
+  birthday?: string
+  address?: string
+  notes?: string
 }
 
-export type ReminderType = 'appointment' | 'pickup' | 'return' | 'overdue' | 'balance' | 'wedding' | 'alteration_ready'
+/** A file kept on a client's or staff member's profile (contract, passport copy…). */
+export interface DocFile {
+  id: ID
+  ownerType: 'client' | 'staff'
+  ownerId: ID
+  branchId: ID
+  /** What it is, e.g. "Shartnoma" — shown in the list. */
+  name: string
+  fileName: string
+  mime: string
+  size: number
+  /** Stored file id (see lib/files). */
+  fileId: ID
+  uploadedAt: string
+  uploadedBy?: string
+}
+
+export type ReminderType = 'appointment' | 'pickup' | 'return' | 'overdue' | 'balance' | 'wedding'
 
 export interface SmsTemplate {
   type: ReminderType
   text: Record<Lang, string>
 }
+
+export type SmsStatus = 'logged' | 'opened' | 'sent' | 'failed'
 
 export interface SmsLog {
   id: ID
@@ -284,19 +253,65 @@ export interface SmsLog {
   text: string
   /** Stable key of the reminder that produced it, so it isn't offered twice. */
   refKey?: string
+  /** How it went out: only recorded, opened in the phone's SMS app, or sent by the gateway. */
+  status?: SmsStatus
+  error?: string
   sentAt: string
   sentBy?: string
 }
+
+/**
+ * - `log`: only record the message (no sending)
+ * - `device`: open the phone's SMS app with the text filled in
+ * - `gateway`: send through the boutique's SMS server (e.g. the bundled Eskiz.uz gateway)
+ */
+export type SmsMode = 'log' | 'device' | 'gateway'
+
+export interface SmsSettings {
+  mode: SmsMode
+  gatewayUrl: string
+  /** Shared secret the gateway checks; never the Eskiz password itself. */
+  apiKey: string
+  /** Approved sender name ("nick") at the SMS provider. */
+  sender: string
+  /** Which automatic reminders the Notifications page suggests. */
+  reminders: Record<ReminderType, boolean>
+  pickupDaysAhead: number
+  weddingDaysAhead: number
+  balanceDaysAhead: number
+}
+
+export type Accent = 'gold' | 'rose' | 'emerald' | 'wine' | 'noir' | 'sage' | 'dusk' | 'mauve'
 
 export interface Settings {
   storeName: string
   /** Letters in front of order numbers, e.g. "SH" → SH-1001. */
   orderPrefix: string
+  phone: string
+  instagram: string
+  telegram: string
+  /** Legal details printed on contracts. */
+  legalName: string
+  inn: string
+  bankName: string
+  bankAccount: string
+  mfo: string
+  contractNote: string
   lateFeePerDay: number
   defaultSecurityDeposit: number
   /** Days a dress is blocked after return for cleaning before it can go out again. */
   cleaningDays: number
   defaultRentalDays: number
+  /** Share of the order taken as the first payment, in percent. */
+  defaultDepositPercent: number
+  defaultInstallments: number
+  /** Payment methods offered at the till and in payment forms. */
+  methods: PaymentMethod[]
+  openTime: string
+  closeTime: string
+  appointmentMinutes: number
+  accent: Accent
+  sms: SmsSettings
 }
 
 /** One boutique's data. Logins live in the platform registry, not here. */
@@ -306,12 +321,11 @@ export interface DB {
   productTypes: ProductType[]
   products: Product[]
   clients: Client[]
-  leads: Lead[]
   appointments: Appointment[]
   orders: Order[]
   payments: Payment[]
-  alterations: Alteration[]
   staff: Staff[]
+  documents: DocFile[]
   smsTemplates: SmsTemplate[]
   smsLog: SmsLog[]
   settings: Settings

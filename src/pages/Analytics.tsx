@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Building2, CalendarHeart, CircleDollarSign, ClipboardList, Gauge, HandCoins, Inbox, Layers, Percent, ShieldCheck, Shirt, Table2, Users, Wallet,
+  Building2, CalendarHeart, CircleDollarSign, ClipboardList, Gauge, HandCoins, Layers, Percent, ShieldCheck, Shirt, Table2, Users, Wallet,
 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
@@ -17,6 +17,7 @@ import { AreaTrend, Columns, Donut, foldSlices, HBars, Legend, OTHER_COLOR, SERI
 import { Chip, Empty, pctChange, productTone, Segmented, Stat } from '../components/ui'
 import { PRODUCT_STATUSES, SOURCES } from '../components/forms'
 import type { Lang } from '../data/types'
+import { ROLE_TONE } from '../components/roles'
 
 type Tab = 'overview' | 'branches' | 'products' | 'staff' | 'clients'
 
@@ -51,9 +52,9 @@ export default function Analytics() {
       <div className="row between">
         <div className="row">
           {scope === 'all' ? (
-            <Chip tone="dark"><Building2 />{t('an.founderView')}</Chip>
+            <Chip tone="dark" className="wrap"><Building2 />{t('an.founderView')}</Chip>
           ) : (
-            <Chip tone="gold">{t('an.branchView', { name: L.branch.get(scope)?.name ?? '' })}</Chip>
+            <Chip tone="gold" className="wrap">{t('an.branchView', { name: L.branch.get(scope)?.name ?? '' })}</Chip>
           )}
         </div>
         <Segmented value={period} onChange={setPeriod} options={PERIODS.map((k) => ({ value: k, label: t(`an.p.${k}` as DictKey) }))} />
@@ -99,7 +100,7 @@ function Overview({ slice, period, lang }: { slice: Slice; period: PeriodKey; la
         <Stat icon={<Wallet />} label={t('an.outstanding')} value={moneyShort(cur.outstanding)} hint={`${t('an.activeRentals')}: ${cur.activeRentals}`} />
         <Stat icon={<ShieldCheck />} label={t('an.securityHeld')} value={moneyShort(cur.securityHeld)} />
         <Stat icon={<Users />} label={t('an.newClients')} value={num(cur.newClients)} delta={{ pct: pctChange(cur.newClients, prev.newClients), label: vs }} />
-        <Stat icon={<Percent />} label={t('an.conversion')} value={`${Math.round(cur.conversion)}%`} hint={`${cur.leadsWon} / ${cur.leads}`} />
+        <Stat icon={<Percent />} label={t('an.visitToOrder')} value={`${Math.round(cur.visitConversion)}%`} delta={{ pct: pctChange(cur.visitConversion, prev.visitConversion), label: vs }} />
       </div>
 
       <section className="card">
@@ -196,7 +197,7 @@ function BranchCompare({ period, lang }: { period: PeriodKey; lang: Lang }) {
     { label: t('an.securityHeld'), get: (m) => money(m.securityHeld) },
     { label: t('an.activeRentals'), get: (m) => num(m.activeRentals) },
     { label: t('an.newClients'), get: (m) => num(m.newClients) },
-    { label: t('an.conversion'), get: (m) => `${Math.round(m.conversion)}%` },
+    { label: t('an.visitToOrder'), get: (m) => `${Math.round(m.visitConversion)}%` },
     { label: t('an.dresses'), get: (m) => num(m.dresses) },
   ]
 
@@ -386,20 +387,19 @@ function StaffTab({ slice, period }: { slice: Slice; period: PeriodKey }) {
               <tr>
                 <th>{t('c.staff')}</th><th>{t('st.role')}</th>{scope === 'all' && <th>{t('c.branch')}</th>}
                 <th className="num">{t('st.salesCount')}</th><th className="num">{t('an.salesVolume')}</th><th className="num">{t('an.commission')}</th>
-                <th className="num">{t('an.appointments')}</th><th className="num">{t('an.alterationsDone')}</th>
+                <th className="num">{t('an.appointments')}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ s, r }) => (
                 <tr key={s.id}>
                   <td className="cell-main">{s.name}</td>
-                  <td><Chip tone="gold" plain>{t(`staffRole.${s.role}` as DictKey)}</Chip></td>
+                  <td><Chip tone={ROLE_TONE[s.role]} plain>{t(`staffRole.${s.role}` as DictKey)}</Chip></td>
                   {scope === 'all' && <td className="soft">{L.branch.get(s.branchId)?.name}</td>}
                   <td className="num">{r.orders}</td>
                   <td className="num">{money(r.volume)}</td>
                   <td className="num strong">{money(r.commission)}</td>
                   <td className="num">{r.appointments}</td>
-                  <td className="num">{r.alterations}</td>
                 </tr>
               ))}
             </tbody>
@@ -419,14 +419,6 @@ function StaffTab({ slice, period }: { slice: Slice; period: PeriodKey }) {
 function ClientsTab({ slice, period, lang }: { slice: Slice; period: PeriodKey; lang: Lang }) {
   const { t, num } = useI18n()
   const p = periodRange(period, todayStr())
-  const leads = slice.leads.filter((l) => inRange(dateOf(l.createdAt), p.from, p.to))
-  const reached = (stages: string[]) => leads.filter((l) => stages.includes(l.stage)).length
-  const funnel = [
-    { key: 'all', label: t('stage.new'), value: leads.length },
-    { key: 'contacted', label: t('stage.contacted'), value: reached(['contacted', 'appointment', 'won']) },
-    { key: 'appointment', label: t('stage.appointment'), value: reached(['appointment', 'won']) },
-    { key: 'won', label: t('stage.won'), value: reached(['won']) },
-  ]
   const clients = slice.clients.filter((c) => inRange(dateOf(c.createdAt), p.from, p.to))
   const sources = SOURCES.map((s) => ({ key: s, label: t(`source.${s}` as DictKey), value: clients.filter((c) => c.source === s).length })).sort((a, b) => b.value - a.value)
   const viewings = slice.appointments.filter((a) => a.type === 'viewing' && a.status === 'completed' && inRange(a.date, p.from, p.to))
@@ -444,17 +436,9 @@ function ClientsTab({ slice, period, lang }: { slice: Slice; period: PeriodKey; 
     <>
       <div className="stats">
         <Stat icon={<Users />} label={t('an.newClients')} value={num(clients.length)} />
-        <Stat icon={<Inbox />} label={t('nav.leads')} value={num(leads.length)} hint={`${t('stage.lost')}: ${reached(['lost'])}`} />
-        <Stat icon={<Percent />} label={t('an.conversion')} value={`${leads.length ? Math.round((funnel[3].value / leads.length) * 100) : 0}%`} />
         <Stat icon={<CalendarHeart />} label={t('an.visitToOrder')} value={`${viewings.length ? Math.round((converted / viewings.length) * 100) : 0}%`} hint={`${converted} / ${viewings.length}`} />
       </div>
       <div className="grid g-2">
-        <section className="card">
-          <div className="card-head"><h3><Inbox />{t('an.funnel')}</h3></div>
-          <div className="card-body">
-            <HBars format={(n) => num(n)} rows={funnel.map((f, i) => ({ ...f, sub: i && funnel[0].value ? `${Math.round((f.value / funnel[0].value) * 100)}%` : undefined }))} />
-          </div>
-        </section>
         <section className="card">
           <div className="card-head"><h3><Users />{t('an.sources')}</h3></div>
           <div className="card-body">

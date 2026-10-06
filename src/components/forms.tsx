@@ -4,24 +4,25 @@ import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { useLookups, useScoped, useStore } from '../data/store'
 import type {
-  Appointment, AppointmentType, Client, Condition, DealMode, DressColor, ID, Lang, LeadSource, Measurements, Order,
+  Appointment, AppointmentType, Client, ClientSource, Condition, DealMode, DressColor, ID, Lang, Order,
   PaymentKind, PaymentMethod, Product, ProductStatus, Silhouette,
 } from '../data/types'
 import { groupByOrder, orderMoney, planRows } from '../data/domain'
 import { addPayment } from '../data/actions'
 import { nowIso, todayStr } from '../lib/date'
 import { uid } from '../lib/storage'
+import { deleteFile } from '../lib/files'
 import { Avatar, Field, FormFooter, Modal, MoneyInput, useToast } from './ui'
+import { PhotoManager } from './photos'
 
-export const SOURCES: LeadSource[] = ['instagram', 'telegram', 'referral', 'walk_in', 'website', 'other']
+export const SOURCES: ClientSource[] = ['instagram', 'telegram', 'referral', 'walk_in', 'website', 'other']
 export const METHODS: PaymentMethod[] = ['cash', 'card', 'terminal', 'click', 'payme', 'transfer']
 export const APPT_TYPES: AppointmentType[] = ['viewing', 'measurement', 'fitting', 'pickup', 'return']
-export const MEAS_KEYS: (keyof Omit<Measurements, 'updatedAt'>)[] = ['bust', 'waist', 'hips', 'height', 'shoulder', 'sleeve', 'length', 'shoe']
 export const COLORS: DressColor[] = ['white', 'ivory', 'champagne', 'blush', 'silver', 'gold', 'red', 'other']
 export const STYLES: Silhouette[] = ['a_line', 'ball_gown', 'mermaid', 'sheath', 'princess', 'empire', 'short', 'national']
 export const CONDITIONS: Condition[] = ['new', 'excellent', 'good', 'fair', 'damaged']
 export const MODES: DealMode[] = ['both', 'rent', 'sale']
-export const PRODUCT_STATUSES: ProductStatus[] = ['available', 'reserved', 'rented', 'sold', 'alteration', 'cleaning']
+export const PRODUCT_STATUSES: ProductStatus[] = ['available', 'reserved', 'rented', 'sold', 'cleaning']
 
 /** Branch picker shown only when the founder is looking at all branches. */
 export function useBranchChoice(initial?: ID) {
@@ -89,7 +90,7 @@ export function ClientPicker({ value, onChange, branchId, id = 'client' }: { val
         />
       </div>
       {open && results.length > 0 && (
-        <div className="card" style={{ position: 'absolute', left: 0, right: 0, top: 44, zIndex: 5, boxShadow: 'var(--shadow-lg)', maxHeight: 300, overflowY: 'auto' }}>
+        <div className="card" style={{ position: 'absolute', left: 0, right: 0, top: 44, zIndex: 5, boxShadow: 'var(--shadow-pop)', maxHeight: 300, overflowY: 'auto' }}>
           {results.map((c) => (
             <button
               type="button"
@@ -117,7 +118,7 @@ export function ClientFormModal({ open, onClose, client, onSaved }: { open: bool
   const { t } = useI18n()
   const { upsert } = useStore()
   const toast = useToast()
-  const blank = (): Client => ({ id: '', branchId: '', name: '', phone: '+998 ', lang: 'uz', source: 'instagram', measurements: {}, createdAt: '' })
+  const blank = (): Client => ({ id: '', branchId: '', name: '', phone: '+998 ', lang: 'uz', source: 'instagram', createdAt: '' })
   const [c, setC] = useState<Client>(client ?? blank())
   const [tried, setTried] = useState(false)
   const branch = useBranchChoice(client?.branchId)
@@ -138,17 +139,15 @@ export function ClientFormModal({ open, onClose, client, onSaved }: { open: bool
       branchId: client?.branchId ?? branch.branchId,
       name: c.name.trim(),
       createdAt: c.createdAt || nowIso(),
-      measurements: { ...c.measurements, updatedAt: todayStr() },
     }
     upsert('clients', saved)
     toast(t('c.saved'))
     onSaved?.(saved.id)
     onClose()
   }
-  const setM = (k: keyof Measurements, v: string) => setC({ ...c, measurements: { ...c.measurements, [k]: v === '' ? undefined : Number(v) } })
 
   return (
-    <Modal open={open} onClose={onClose} title={client ? t('cl.edit') : t('cl.add')} size="wide" footer={<FormFooter onCancel={onClose} onSave={save} />}>
+    <Modal open={open} onClose={onClose} title={client ? t('cl.edit') : t('cl.add')} footer={<FormFooter onCancel={onClose} onSave={save} />}>
       <div className="form-grid">
         <Field label={t('c.fullName')} htmlFor="cl-name" error={tried && c.name.trim().length < 2 ? t('c.required') : undefined}>
           <input id="cl-name" className="input" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} autoFocus />
@@ -160,7 +159,7 @@ export function ClientFormModal({ open, onClose, client, onSaved }: { open: bool
           <input id="cl-wedding" type="date" className="input" value={c.weddingDate ?? ''} onChange={(e) => setC({ ...c, weddingDate: e.target.value || undefined })} />
         </Field>
         <Field label={t('cl.source')} htmlFor="cl-source">
-          <select id="cl-source" className="select" value={c.source} onChange={(e) => setC({ ...c, source: e.target.value as LeadSource })}>
+          <select id="cl-source" className="select" value={c.source} onChange={(e) => setC({ ...c, source: e.target.value as ClientSource })}>
             {SOURCES.map((s) => <option key={s} value={s}>{t(`source.${s}` as DictKey)}</option>)}
           </select>
         </Field>
@@ -175,19 +174,6 @@ export function ClientFormModal({ open, onClose, client, onSaved }: { open: bool
         </Field>
       </div>
       {tried && !client?.branchId && !branch.branchId && <div className="notice bad">{t('c.chooseBranch')}</div>}
-      <div>
-        <div className="row between" style={{ marginBottom: 10 }}>
-          <b>{t('cl.measurements')}</b>
-          <span className="muted small">{t('cl.measHint')}</span>
-        </div>
-        <div className="form-grid g4">
-          {MEAS_KEYS.map((k) => (
-            <Field key={k} label={t(`meas.${k}` as DictKey)} htmlFor={`m-${k}`}>
-              <input id={`m-${k}`} className="input num" inputMode="numeric" value={c.measurements[k] ?? ''} onChange={(e) => setM(k, e.target.value.replace(/[^\d.]/g, ''))} />
-            </Field>
-          ))}
-        </div>
-      </div>
     </Modal>
   )
 }
@@ -205,7 +191,7 @@ export function AppointmentFormModal({ open, onClose, appt, defaults }: {
   const { client: clientById, staff: staffById } = useLookups()
   const toast = useToast()
   const blank = (): Appointment => ({
-    id: '', branchId: '', clientId: '', type: 'viewing', date: todayStr(), time: '11:00', duration: 60, productIds: [], status: 'scheduled', createdAt: '', ...defaults,
+    id: '', branchId: '', clientId: '', type: 'viewing', date: todayStr(), time: '11:00', duration: db.settings.appointmentMinutes || 60, productIds: [], status: 'scheduled', createdAt: '', ...defaults,
   })
   const [a, setA] = useState<Appointment>(appt ?? blank())
   const [tried, setTried] = useState(false)
@@ -348,11 +334,22 @@ export function PaymentModal({ open, onClose, order }: { open: boolean; onClose:
   )
 }
 
+/** Payment methods the boutique accepts (Settings → Rental & payments). */
+export function useMethods(): PaymentMethod[] {
+  const { db } = useStore()
+  const on = db.settings.methods?.length ? db.settings.methods : METHODS
+  return METHODS.filter((m) => on.includes(m))
+}
+
 export function MethodPicker({ value, onChange }: { value: PaymentMethod; onChange: (m: PaymentMethod) => void }) {
   const { t } = useI18n()
+  const methods = useMethods()
+  useEffect(() => {
+    if (!methods.includes(value) && methods[0]) onChange(methods[0])
+  }, [methods, value, onChange])
   return (
     <div className="segmented">
-      {METHODS.map((m) => (
+      {methods.map((m) => (
         <button key={m} type="button" className={value === m ? 'on' : ''} onClick={() => onChange(m)}>{t(`method.${m}` as DictKey)}</button>
       ))}
     </div>
@@ -378,6 +375,13 @@ export function ProductFormModal({ open, onClose, product, kind }: { open: boole
       setTried(false)
     }
   }, [open, product])
+  const before = product?.photos ?? []
+  const photos = p.photos ?? []
+  // Photos uploaded in this session but not saved are thrown away on cancel.
+  const cancel = () => {
+    photos.filter((x) => !before.includes(x)).forEach(deleteFile)
+    onClose()
+  }
   const type = db.productTypes.find((x) => x.id === p.typeId)
   const isAcc = type?.kind === 'accessory'
 
@@ -397,15 +401,20 @@ export function ProductFormModal({ open, onClose, product, kind }: { open: boole
       branchId: product?.branchId ?? branch.branchId,
       style: isAcc ? undefined : p.style,
       quantity: isAcc ? p.quantity : p.status === 'sold' ? 0 : 1,
+      photos,
       createdAt: p.createdAt || nowIso(),
     })
+    before.filter((x) => !photos.includes(x)).forEach(deleteFile)
     toast(t('c.saved'))
     onClose()
   }
   const num = (k: keyof Product) => (v: number) => setP({ ...p, [k]: v })
 
   return (
-    <Modal open={open} onClose={onClose} title={product ? t('pr.edit') : t('pr.add')} size="wide" footer={<FormFooter onCancel={onClose} onSave={save} />}>
+    <Modal open={open} onClose={cancel} title={product ? t('pr.edit') : t('pr.add')} size="wide" footer={<FormFooter onCancel={cancel} onSave={save} />}>
+      <Field label={t('ph.photos')}>
+        <PhotoManager id="p-photos" photos={photos} onChange={(ids) => setP((x) => ({ ...x, photos: ids }))} />
+      </Field>
       <div className="form-grid g3">
         <Field label={t('c.type')} htmlFor="p-type">
           <select id="p-type" className="select" value={p.typeId} onChange={(e) => setP({ ...p, typeId: e.target.value })}>
