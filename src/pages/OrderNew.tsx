@@ -258,7 +258,7 @@ export default function OrderNew() {
                 <Field label={t('ord.deposit')} htmlFor="o-deposit"><MoneyInput id="o-deposit" value={deposit} onChange={(v) => { setDepositTouched(true); setDeposit(v) }} /></Field>
                 <Field label={t('ord.installments')} htmlFor="o-inst">
                   <select id="o-inst" className="select" value={nInst} onChange={(e) => setNInst(Number(e.target.value))}>
-                    {[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+                    {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </Field>
               </div>

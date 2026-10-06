@@ -6,10 +6,8 @@ type Entry = { uz: string; ru: string; en: string }
 export const dict = {
   // ---------- brand / auth ----------
   "brand.tagline": { uz: "Kelinlik liboslari salonlari uchun ERP", ru: "ERP для свадебных салонов", en: "ERP for bridal boutiques" },
-  "auth.heroTitle": { uz: "HAR BIR KELIN — MALIKA", ru: "КАЖДАЯ НЕВЕСТА — КОРОЛЕВА", en: "EVERY BRIDE IS A QUEEN" },
-  "auth.heroText": { uz: "Kelinlik liboslari salonlarini boshqarish uchun qulay va zamonaviy platforma", ru: "Удобная и современная платформа для управления свадебными салонами", en: "A powerful, yet easy to use platform for managing bridal boutiques" },
   "auth.welcome": { uz: "Xush kelibsiz", ru: "Добро пожаловать", en: "Welcome back" },
-  "auth.subtitle": { uz: "Tizimga kirish uchun ma'lumotlaringizni kiriting", ru: "Введите данные для входа", en: "Please enter your login details below" },
+  "auth.subtitle": { uz: "Salon hisobingizga kiring", ru: "Войдите в аккаунт своего салона", en: "Sign in to your boutique's account" },
   "auth.email": { uz: "Elektron pochta", ru: "Электронная почта", en: "Email address" },
   "auth.emailPh": { uz: "Pochtangizni kiriting", ru: "Введите почту", en: "Enter your email" },
   "auth.password": { uz: "Parol", ru: "Пароль", en: "Password" },
@@ -17,10 +15,13 @@ export const dict = {
   "auth.login": { uz: "Kirish", ru: "Войти", en: "Log in" },
   "auth.logout": { uz: "Chiqish", ru: "Выйти", en: "Log out" },
   "auth.error": { uz: "Pochta yoki parol noto'g'ri", ru: "Неверная почта или пароль", en: "Wrong email or password" },
-  "auth.demo": { uz: "Demo hisoblar (bosing — avtomatik to'ldiriladi)", ru: "Демо-аккаунты (нажмите, чтобы заполнить)", en: "Demo accounts (click to fill in)" },
+  "auth.disabled": { uz: "Bu hisob o'chirilgan. Administrator bilan bog'laning.", ru: "Этот аккаунт отключён. Свяжитесь с администратором.", en: "This account is turned off. Contact the administrator." },
+  "auth.demo": { uz: "Demo hisoblar", ru: "Демо-аккаунты", en: "Demo accounts" },
+  "auth.demoHint": { uz: "Hisobni bosing — pochta va parol to'ldiriladi", ru: "Нажмите на аккаунт, чтобы заполнить почту и пароль", en: "Click an account to fill in its email and password" },
   "auth.demoPassword": { uz: "Barcha demo hisoblar paroli", ru: "Пароль для всех демо-аккаунтов", en: "Password for every demo account" },
   "role.founder": { uz: "Asoschi", ru: "Основатель", en: "Founder" },
-  "role.manager": { uz: "Filial boshqaruvchisi", ru: "Управляющий филиалом", en: "Branch manager" },
+  "role.manager": { uz: "Filial hisobi", ru: "Аккаунт филиала", en: "Branch account" },
+  "role.admin": { uz: "Platforma administratori", ru: "Администратор платформы", en: "Platform admin" },
 
   // ---------- navigation ----------
   "nav.today": { uz: "Bugun", ru: "Сегодня", en: "Today" },
@@ -620,6 +621,29 @@ export const dict = {
   "br.emailTaken": { uz: "Bu pochta allaqachon band", ru: "Эта почта уже используется", en: "That email is already in use" },
   "br.inUse": { uz: "Filialda ma'lumotlar bor — o'chirib bo'lmaydi", ru: "В филиале есть данные — удалить нельзя", en: "This branch has data and can't be deleted" },
   "br.lastYou": { uz: "O'zingizni o'chira olmaysiz", ru: "Нельзя удалить себя", en: "You can't delete your own account" },
+
+  // ---------- platform admin ----------
+  "adm.title": { uz: "Platforma boshqaruvi", ru: "Управление платформой", en: "Platform management" },
+  "adm.hint": { uz: "Har bir salon o'z hisobi bilan kiradi va faqat o'z ma'lumotlarini ko'radi.", ru: "Каждый салон входит под своим аккаунтом и видит только свои данные.", en: "Each boutique signs in with its own account and sees only its own data." },
+  "adm.shops": { uz: "Salonlar", ru: "Салоны", en: "Boutiques" },
+  "adm.addShop": { uz: "Salon qo'shish", ru: "Добавить салон", en: "Add boutique" },
+  "adm.editShop": { uz: "Salonni tahrirlash", ru: "Изменить салон", en: "Edit boutique" },
+  "adm.shopName": { uz: "Salon nomi", ru: "Название салона", en: "Boutique name" },
+  "adm.founderName": { uz: "Asoschining F.I.Sh.", ru: "Ф.И.О. основателя", en: "Founder's full name" },
+  "adm.founderEmail": { uz: "Asoschi pochtasi (login)", ru: "Почта основателя (логин)", en: "Founder's email (login)" },
+  "adm.firstBranch": { uz: "Birinchi filial nomi", ru: "Название первого филиала", en: "First branch name" },
+  "adm.created": { uz: "Salon yaratildi", ru: "Салон создан", en: "Boutique created" },
+  "adm.since": { uz: "Ulangan sana", ru: "Подключён", en: "Joined" },
+  "adm.noFounder": { uz: "Asoschi hisobi yo'q", ru: "Нет аккаунта основателя", en: "No founder account" },
+  "adm.reset": { uz: "Demo platformani qayta tiklash", ru: "Сбросить демо-платформу", en: "Reset demo platform" },
+  "adm.resetConfirm": { uz: "Barcha salonlar, hisoblar va ma'lumotlar demo holatiga qaytariladi. Davom etasizmi?", ru: "Все салоны, аккаунты и данные вернутся к демо-состоянию. Продолжить?", en: "Every boutique, login and record goes back to the demo state. Continue?" },
+  "adm.openShop": { uz: "Salon ma'lumotlari faqat salon hisobidan ko'rinadi", ru: "Данные салона видны только из аккаунта салона", en: "A boutique's records are only visible from its own account" },
+
+  // ---------- charts ----------
+  "pay.group.card": { uz: "Karta va terminal", ru: "Карта и терминал", en: "Card & terminal" },
+  "pay.group.mobile": { uz: "Click / Payme", ru: "Click / Payme", en: "Click / Payme" },
+  "an.salesMix": { uz: "Sotuv tarkibi", ru: "Структура продаж", en: "Sales mix" },
+  "an.revenueShare": { uz: "Tushum ulushi", ru: "Доля выручки", en: "Revenue share" },
 
   // ---------- settings ----------
   "set.title": { uz: "Sozlamalar", ru: "Настройки", en: "Settings" },

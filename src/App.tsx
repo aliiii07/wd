@@ -21,13 +21,22 @@ import StaffPage from './pages/Staff'
 import Notifications from './pages/Notifications'
 import Branches from './pages/Branches'
 import SettingsPage from './pages/Settings'
+import Admin from './pages/Admin'
 
 export default function App() {
-  const { user, isFounder } = useStore()
+  const { user, isFounder, isAdmin } = useStore()
   if (!user) {
     return (
       <Routes>
         <Route path="*" element={<Login />} />
+      </Routes>
+    )
+  }
+  if (isAdmin) {
+    return (
+      <Routes>
+        <Route path="/admin" element={<Admin />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     )
   }

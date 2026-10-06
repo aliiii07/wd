@@ -7,12 +7,13 @@ import {
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { useLookups, useScoped, useStore } from '../data/store'
-import { cashOf, groupByOrder, isOverdue, lateDays, orderMoney, revenueOf } from '../data/domain'
+import { groupByOrder, isOverdue, lateDays, orderMoney, revenueOf } from '../data/domain'
 import { addDays, dateOf, diffDays, timeOf, todayStr } from '../lib/date'
 import { Page } from '../components/Layout'
-import { AppointmentFormModal, ClientFormModal, METHODS } from '../components/forms'
+import { AppointmentFormModal, ClientFormModal } from '../components/forms'
 import { apptTone, Avatar, Chip, Empty, pctChange, Stat } from '../components/ui'
-import { HBars } from '../components/charts'
+import { Donut, useMethodSlices } from '../components/charts'
+import { methodBreakdown, sliceFor } from '../data/analytics'
 import type { Appointment, Order } from '../data/types'
 
 export default function Today() {
@@ -48,8 +49,7 @@ export default function Today() {
     .filter((o) => (o.status === 'booked' || o.status === 'picked_up') && o.weddingDate && o.weddingDate >= today && o.weddingDate <= addDays(today, 14))
     .sort((a, b) => a.weddingDate!.localeCompare(b.weddingDate!))
 
-  const paysToday = scoped.payments.filter((p) => dateOf(p.date) === today)
-  const byMethod = METHODS.map((m) => ({ key: m, label: t(`method.${m}` as DictKey), value: paysToday.filter((p) => p.method === m).reduce((s, p) => s + Math.max(0, cashOf(p)), 0) })).filter((r) => r.value > 0)
+  const methodSlices = useMethodSlices(methodBreakdown(sliceFor(db, scope === 'all' ? 'all' : [scope]), today, today))
   const byBranch = db.branches.map((b) => ({ b, value: db.payments.filter((p) => p.branchId === b.id && dateOf(p.date) === today).reduce((s, p) => s + revenueOf(p), 0) }))
 
   const altsDue = scoped.alterations
@@ -72,7 +72,7 @@ export default function Today() {
     <Page title={t('today.title')} crumb={date(today)}>
       <div className="card hero-bar">
         <div>
-          <h2>{t('today.greeting', { name: user?.name.split(' ')[0] ?? '' })}</h2>
+          <h2>{t('today.greeting', { name: (user?.role === 'founder' ? user.name.split(' ')[0] : user?.name) ?? '' })}</h2>
           <div className="date">{scope === 'all' ? t('c.allBranches') : `${t('c.branch')}: ${L.branch.get(scope)?.name}`}</div>
         </div>
         <div className="row">
@@ -166,51 +166,14 @@ export default function Today() {
         </section>
       </div>
 
-      <section className="card">
-        <div className="card-head">
-          <h3><CalendarHeart />{t('today.weddings')}</h3>
-          <span className="sub">{t('today.weddingsHint')}</span>
-        </div>
-        {weddings.length === 0 ? (
-          <Empty icon={<CalendarHeart />} title={t('today.noWeddings')} />
-        ) : (
-          <div className="countdowns">
-            {weddings.map((o) => {
-              const c = L.client.get(o.clientId)
-              const days = diffDays(today, o.weddingDate!)
-              const m = orderMoney(o, pays.get(o.id))
-              return (
-                <div className={`countdown ${days <= 2 ? 'hot' : ''}`} key={o.id} onClick={() => nav(`/orders/${o.id}`)} role="button" tabIndex={0}>
-                  <span className="days">
-                    <b className="num">{days}</b>
-                    <small>{t('c.days', { n: '' }).trim()}</small>
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="strong" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c?.name}</div>
-                    <div className="cell-sub">{days === 0 ? t('today.weddingToday') : days === 1 ? t('today.weddingTomorrow') : date(o.weddingDate)}</div>
-                    <div style={{ marginTop: 6 }}>
-                      {m.balance > 0 ? <Chip tone="warn">{t('today.balanceDue', { amount: money(m.balance) })}</Chip> : <Chip tone="good">{t('today.fullyPaid')}</Chip>}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      <div className="grid g-3">
+      <div className="grid g-2">
         <section className="card">
           <div className="card-head">
             <h3><Wallet />{t('today.payments')}</h3>
-            <span className="strong num">{money(revToday)}</span>
+            <span className="sub">{scope === 'all' ? t('c.allBranches') : L.branch.get(scope)?.name}</span>
           </div>
           <div className="card-body stack">
-            {byMethod.length === 0 ? (
-              <Empty icon={<Wallet />} title={t('today.noPayments')} />
-            ) : (
-              <HBars rows={byMethod} format={money} />
-            )}
+            <Donut parts={methodSlices} format={money} centerFormat={moneyShort} centerLabel={t('c.total')} emptyLabel={t('today.noPayments')} />
             {scope === 'all' && db.branches.length > 1 && (
               <table className="table">
                 <thead>
@@ -226,6 +189,41 @@ export default function Today() {
           </div>
         </section>
 
+        <section className="card">
+          <div className="card-head">
+            <h3><CalendarHeart />{t('today.weddings')}</h3>
+            <span className="sub">{t('today.weddingsHint')}</span>
+          </div>
+          {weddings.length === 0 ? (
+            <Empty icon={<CalendarHeart />} title={t('today.noWeddings')} />
+          ) : (
+            <div className="countdowns">
+              {weddings.map((o) => {
+                const c = L.client.get(o.clientId)
+                const days = diffDays(today, o.weddingDate!)
+                const m = orderMoney(o, pays.get(o.id))
+                return (
+                  <div className={`countdown ${days <= 2 ? 'hot' : ''}`} key={o.id} onClick={() => nav(`/orders/${o.id}`)} role="button" tabIndex={0}>
+                    <span className="days">
+                      <b className="num">{days}</b>
+                      <small>{t('c.days', { n: '' }).trim()}</small>
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="strong" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c?.name}</div>
+                      <div className="cell-sub">{days === 0 ? t('today.weddingToday') : days === 1 ? t('today.weddingTomorrow') : date(o.weddingDate)}</div>
+                      <div style={{ marginTop: 6 }}>
+                        {m.balance > 0 ? <Chip tone="warn">{t('today.balanceDue', { amount: money(m.balance) })}</Chip> : <Chip tone="good">{t('today.fullyPaid')}</Chip>}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="grid g-2">
         <section className="card">
           <div className="card-head">
             <h3><Scissors />{t('today.alterations')}</h3>

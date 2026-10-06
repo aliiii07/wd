@@ -8,14 +8,14 @@ import type { DictKey } from '../i18n/dict'
 import { monthShort } from '../i18n/dict'
 import { useLookups, useStore } from '../data/store'
 import {
-  dressRevenue, methodBreakdown, metrics, PERIODS, periodRange, revenueSeries, sliceFor, staffPerformance, statusBreakdown, typeBreakdown,
+  dressRevenue, methodBreakdown, metrics, PERIODS, periodRange, revenueSeries, salesMix, sliceFor, staffPerformance, statusBreakdown, typeBreakdown,
   weddingsAhead, type PeriodKey, type Slice,
 } from '../data/analytics'
 import { dateOf, inRange, parseDate, todayStr } from '../lib/date'
 import { Page } from '../components/Layout'
-import { AreaTrend, Columns, HBars, Legend, seriesColor, ShareBar } from '../components/charts'
+import { AreaTrend, Columns, Donut, foldSlices, HBars, Legend, OTHER_COLOR, SERIES, seriesColor, ShareBar, useMethodSlices } from '../components/charts'
 import { Chip, Empty, pctChange, productTone, Segmented, Stat } from '../components/ui'
-import { METHODS, PRODUCT_STATUSES, SOURCES } from '../components/forms'
+import { PRODUCT_STATUSES, SOURCES } from '../components/forms'
 import type { Lang } from '../data/types'
 
 type Tab = 'overview' | 'branches' | 'products' | 'staff' | 'clients'
@@ -33,7 +33,7 @@ export default function Analytics() {
   const { db, scope, isFounder } = useStore()
   const L = useLookups()
   const [tab, setTab] = useState<Tab>('overview')
-  const [period, setPeriod] = useState<PeriodKey>('thisMonth')
+  const [period, setPeriod] = useState<PeriodKey>('last3')
   const today = todayStr()
   const p = periodRange(period, today)
   const slice = useMemo(() => sliceFor(db, scope === 'all' ? 'all' : [scope]), [db, scope])
@@ -76,8 +76,15 @@ function Overview({ slice, period, lang }: { slice: Slice; period: PeriodKey; la
   const prev = metrics(slice, p.prevFrom, p.prevTo, today)
   const vs = t('an.vsPrev')
   const series = revenueSeries(slice, p).map((x) => ({ label: bucketLabel(x.key, lang), value: x.value }))
-  const methods = methodBreakdown(slice, p.from, p.to)
-  const types = typeBreakdown(slice, p.from, p.to)
+  const methodSlices = useMethodSlices(methodBreakdown(slice, p.from, p.to))
+  const mix = salesMix(slice, p.from, p.to)
+    .filter((g) => g.key !== 'other' || g.value > 0)
+    .map((g, i) => ({
+      key: g.key,
+      label: g.typeId ? loc(slice.productTypes.find((x) => x.id === g.typeId)!.name) : g.key === 'accessories' ? t('pr.accessories') : t('c.other'),
+      value: g.value,
+      color: g.key === 'other' ? OTHER_COLOR : SERIES[i],
+    }))
   const statuses = statusBreakdown(slice)
   const weddings = weddingsAhead(slice.orders, today)
   const [table, setTable] = useState(false)
@@ -130,22 +137,15 @@ function Overview({ slice, period, lang }: { slice: Slice; period: PeriodKey; la
           </div>
         </section>
         <section className="card">
-          <div className="card-head"><h3><Wallet />{t('an.methods')}</h3></div>
+          <div className="card-head"><h3><Wallet />{t('an.methods')}</h3><span className="sub">{t('an.revenue')}</span></div>
           <div className="card-body">
-            <HBars format={money} rows={METHODS.map((m) => ({ key: m, label: t(`method.${m}` as DictKey), value: methods[m] })).sort((a, b) => b.value - a.value)} />
+            <Donut parts={methodSlices} format={money} centerFormat={moneyShort} centerLabel={t('c.total')} emptyLabel={t('c.noData')} />
           </div>
         </section>
         <section className="card">
-          <div className="card-head"><h3><Shirt />{t('an.byType')}</h3></div>
+          <div className="card-head"><h3><Shirt />{t('an.salesMix')}</h3><span className="sub">{t('an.salesVolume')}</span></div>
           <div className="card-body">
-            {types.size === 0 ? (
-              <Empty title={t('c.noData')} />
-            ) : (
-              <HBars
-                format={money}
-                rows={[...types.entries()].map(([id, r]) => ({ key: id, label: loc(slice.productTypes.find((x) => x.id === id)!.name), value: r.revenue, sub: `× ${r.count}` })).sort((a, b) => b.value - a.value)}
-              />
-            )}
+            <Donut parts={mix} format={money} centerFormat={moneyShort} centerLabel={t('c.total')} emptyLabel={t('c.noData')} />
           </div>
         </section>
         <section className="card">
@@ -252,8 +252,14 @@ function BranchCompare({ period, lang }: { period: PeriodKey; lang: Lang }) {
           <div className="card-head"><h3><Percent />{t('an.share')}</h3></div>
           <div className="card-body stack" style={{ gap: 22 }}>
             <div className="stack sm">
-              <span className="label">{t('an.revenue')}</span>
-              <ShareBar format={moneyShort} parts={rows.map((r) => ({ key: r.b.id, label: r.b.name, value: r.m.revenue, color: r.color }))} />
+              <span className="label">{t('an.revenueShare')}</span>
+              <Donut
+                parts={foldSlices(rows.map((r) => ({ key: r.b.id, label: r.b.name, value: r.m.revenue, color: r.color })), t('c.other'))}
+                format={moneyShort}
+                centerLabel={t('c.total')}
+                emptyLabel={t('c.noData')}
+                size={170}
+              />
             </div>
             <div className="stack sm">
               <span className="label">{t('an.orders')}</span>

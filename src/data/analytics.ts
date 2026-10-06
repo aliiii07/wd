@@ -255,3 +255,38 @@ export function weddingsAhead(orders: Order[], today: string, months = 6) {
   }
   return keys.map((k) => ({ key: k, value: counts.get(k)! }))
 }
+
+/** Payment methods in four groups, so a pie never needs more than four colours. */
+export const METHOD_GROUPS: { key: 'cash' | 'card' | 'mobile' | 'transfer'; methods: PaymentMethod[] }[] = [
+  { key: 'cash', methods: ['cash'] },
+  { key: 'card', methods: ['card', 'terminal'] },
+  { key: 'mobile', methods: ['click', 'payme'] },
+  { key: 'transfer', methods: ['transfer'] },
+]
+
+export function methodGroupTotals(byMethod: Record<PaymentMethod, number>) {
+  return METHOD_GROUPS.map((g) => ({ key: g.key, value: g.methods.reduce((sum, m) => sum + byMethod[m], 0) }))
+}
+
+export interface MixGroup {
+  key: string
+  /** The product type behind the group; absent for the accessories and "other" groups. */
+  typeId?: ID
+  value: number
+}
+
+/**
+ * Order value by product group for a pie: the first three dress types each get a slice,
+ * all accessories share one, and any further dress types fall into "other".
+ */
+export function salesMix(s: Slice, from: string, to: string): MixGroup[] {
+  const byType = typeBreakdown(s, from, to)
+  const dressTypes = s.productTypes.filter((t) => t.kind === 'dress')
+  const main = dressTypes.slice(0, 3)
+  const value = (ids: ID[]) => ids.reduce((sum, id) => sum + (byType.get(id)?.revenue ?? 0), 0)
+  return [
+    ...main.map((t) => ({ key: t.id, typeId: t.id, value: value([t.id]) })),
+    { key: 'accessories', value: value(s.productTypes.filter((t) => t.kind === 'accessory').map((t) => t.id)) },
+    { key: 'other', value: value(dressTypes.slice(3).map((t) => t.id)) },
+  ]
+}

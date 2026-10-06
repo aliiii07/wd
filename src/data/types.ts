@@ -16,17 +16,35 @@ export interface Branch {
   createdAt: string
 }
 
-export type AccountRole = 'founder' | 'manager'
+/** A bridal boutique using the ERP (a tenant). Each one has its own data. */
+export interface Shop {
+  id: ID
+  name: string
+  createdAt: string
+  active: boolean
+}
+
+/** `admin` runs the ERP platform; `founder` and `manager` belong to one boutique. */
+export type AccountRole = 'admin' | 'founder' | 'manager'
 
 export interface Account {
   id: ID
+  /** The boutique this login belongs to; absent only for the platform admin. */
+  shopId?: ID
   name: string
   email: string
   password: string
   role: AccountRole
-  /** Required for `manager`; founders see every branch. */
+  /** Required for `manager`; founders see every branch of their boutique. */
   branchId?: ID
   active: boolean
+}
+
+/** Platform-wide registry: boutiques and every login. Boutique data lives in its own DB. */
+export interface Platform {
+  version: number
+  shops: Shop[]
+  accounts: Account[]
 }
 
 export type ProductKind = 'dress' | 'accessory'
@@ -272,6 +290,8 @@ export interface SmsLog {
 
 export interface Settings {
   storeName: string
+  /** Letters in front of order numbers, e.g. "SH" → SH-1001. */
+  orderPrefix: string
   lateFeePerDay: number
   defaultSecurityDeposit: number
   /** Days a dress is blocked after return for cleaning before it can go out again. */
@@ -279,10 +299,10 @@ export interface Settings {
   defaultRentalDays: number
 }
 
+/** One boutique's data. Logins live in the platform registry, not here. */
 export interface DB {
   version: number
   branches: Branch[]
-  accounts: Account[]
   productTypes: ProductType[]
   products: Product[]
   clients: Client[]

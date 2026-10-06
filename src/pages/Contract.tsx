@@ -7,6 +7,7 @@ import { useLookups, useStore } from '../data/store'
 import { orderTotal } from '../data/domain'
 import { dotDate } from '../lib/date'
 import { CAN_PRINT } from '../lib/env'
+import { initialsOf } from '../lib/brand'
 import type { Lang } from '../data/types'
 import { Page } from '../components/Layout'
 import { Empty, Segmented } from '../components/ui'
@@ -41,7 +42,7 @@ export default function Contract() {
       </div>
       <article className="contract" lang={lang}>
         <div className="c-brand">
-          <span className="monogram">OL</span>
+          <span className="monogram">{initialsOf(db.settings.storeName)}</span>
           <span className="display" style={{ fontSize: 22 }}>{db.settings.storeName}</span>
         </div>
         <h1>{tr(rental ? 'ct.rentalTitle' : 'ct.saleTitle')} № {order.number}</h1>

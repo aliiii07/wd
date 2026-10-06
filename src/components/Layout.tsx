@@ -10,6 +10,7 @@ import { useScoped, useStore } from '../data/store'
 import { computeReminders } from '../data/reminders'
 import { todayStr } from '../lib/date'
 import { storage } from '../lib/storage'
+import { initialsOf, PLATFORM } from '../lib/brand'
 import { Avatar } from './ui'
 import type { Lang } from '../data/types'
 
@@ -65,10 +66,10 @@ export function AppLayout() {
       <div className={`app ${collapsed ? 'collapsed' : ''} ${drawer ? 'drawer' : ''}`}>
         <aside className="sidebar" aria-label={t('nav.menu')}>
           <Link to="/today" className="brand">
-            <span className="monogram">OL</span>
+            <span className="monogram">{initialsOf(db.settings.storeName)}</span>
             <span className="hide-collapsed">
               <span className="brand-name">{db.settings.storeName}</span>
-              <span className="brand-sub">Bridal ERP</span>
+              <span className="brand-sub">{PLATFORM.name} ERP</span>
             </span>
           </Link>
           <nav className="nav">
@@ -86,7 +87,7 @@ export function AppLayout() {
                 <Avatar name={user.name} dark />
                 <div className="who hide-collapsed">
                   <b>{user.name}</b>
-                  <span>{isFounder ? t('role.founder') : `${t('role.manager')} · ${db.branches.find((b) => b.id === user.branchId)?.name ?? ''}`}</span>
+                  <span>{isFounder ? t('role.founder') : t('role.manager')}</span>
                 </div>
               </div>
             )}
@@ -125,9 +126,10 @@ export function Page({ title, crumb, tabs, active, onTab, children }: {
 }) {
   const { openDrawer } = useContext(ShellCtx)
   const { t } = useI18n()
+  const { db } = useStore()
   useEffect(() => {
-    if (typeof title === 'string') document.title = `${title} · Oq Libos ERP`
-  }, [title])
+    if (typeof title === 'string') document.title = `${title} · ${db.settings.storeName}`
+  }, [title, db.settings.storeName])
   return (
     <>
       <header className="page-head">

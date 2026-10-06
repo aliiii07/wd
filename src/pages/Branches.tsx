@@ -14,7 +14,8 @@ import { seriesColor } from '../components/charts'
 
 export default function Branches() {
   const { t, moneyShort, money } = useI18n()
-  const { db, user, setScope, remove, mutate } = useStore()
+  const { db, user, shop, platform, setScope, remove, mutatePlatform } = useStore()
+  const shopAccounts = platform.accounts.filter((a) => a.shopId === shop?.id)
   const nav = useNavigate()
   const confirm = useConfirm()
   const toast = useToast()
@@ -35,7 +36,9 @@ export default function Branches() {
   const delAccount = async (a: Account) => {
     if (a.id === user?.id) return toast(t('br.lastYou'), true)
     if (!(await confirm(t('c.confirmDelete'), { danger: true, confirmLabel: t('c.delete') }))) return
-    remove('accounts', a.id)
+    mutatePlatform((p) => {
+      p.accounts = p.accounts.filter((x) => x.id !== a.id)
+    })
     toast(t('c.deleted'))
   }
 
@@ -49,7 +52,7 @@ export default function Branches() {
         {db.branches.map((b, i) => {
           const m = metrics(sliceFor(db, [b.id]), p.from, p.to, today)
           const staff = db.staff.filter((s) => s.branchId === b.id && s.active).length
-          const accounts = db.accounts.filter((a) => a.branchId === b.id)
+          const accounts = shopAccounts.filter((a) => a.branchId === b.id)
           return (
             <section className="card" key={b.id}>
               <div className="card-head">
@@ -90,7 +93,7 @@ export default function Branches() {
           <table className="table">
             <thead><tr><th>{t('c.fullName')}</th><th>{t('auth.email')}</th><th>{t('st.role')}</th><th>{t('c.branch')}</th><th>{t('c.status')}</th><th /></tr></thead>
             <tbody>
-              {db.accounts.map((a) => (
+              {shopAccounts.map((a) => (
                 <tr key={a.id}>
                   <td><div className="person"><Avatar name={a.name} dark={a.role === 'founder'} /><span className="cell-main">{a.name}</span></div></td>
                   <td className="num">{a.email}</td>
@@ -99,7 +102,7 @@ export default function Branches() {
                   <td>
                     <label className="check">
                       <input type="checkbox" checked={a.active} disabled={a.id === user?.id}
-                        onChange={(e) => mutate((d) => { const x = d.accounts.find((y) => y.id === a.id); if (x) x.active = e.target.checked })} />
+                        onChange={(e) => mutatePlatform((p) => { const x = p.accounts.find((y) => y.id === a.id); if (x) x.active = e.target.checked })} />
                       {a.active ? t('st.active') : t('st.inactive')}
                     </label>
                   </td>
@@ -152,9 +155,9 @@ function BranchModal({ open, onClose, branch }: { open: boolean; onClose: () => 
 
 function AccountModal({ open, onClose, account }: { open: boolean; onClose: () => void; account?: Account }) {
   const { t } = useI18n()
-  const { db, upsert } = useStore()
+  const { db, shop, platform, mutatePlatform } = useStore()
   const toast = useToast()
-  const blank = (): Account => ({ id: '', name: '', email: '', password: '', role: 'manager', branchId: db.branches[0]?.id, active: true })
+  const blank = (): Account => ({ id: '', shopId: shop?.id, name: '', email: '', password: '', role: 'manager', branchId: db.branches[0]?.id, active: true })
   const [a, setA] = useState<Account>(account ?? blank())
   const [password, setPassword] = useState('')
   const [tried, setTried] = useState(false)
@@ -165,7 +168,8 @@ function AccountModal({ open, onClose, account }: { open: boolean; onClose: () =
       setTried(false)
     }
   }, [open, account])
-  const emailTaken = db.accounts.some((x) => x.id !== a.id && x.email.toLowerCase() === a.email.trim().toLowerCase())
+  // Emails are logins, so they must be unique across every boutique on the platform.
+  const emailTaken = platform.accounts.some((x) => x.id !== a.id && x.email.toLowerCase() === a.email.trim().toLowerCase())
   const errors = {
     name: a.name.trim().length < 2 ? t('c.required') : '',
     email: !/^\S+@\S+\.\S+$/.test(a.email.trim()) ? t('c.required') : emailTaken ? t('br.emailTaken') : '',
@@ -175,13 +179,19 @@ function AccountModal({ open, onClose, account }: { open: boolean; onClose: () =
   const save = () => {
     setTried(true)
     if (Object.values(errors).some(Boolean)) return
-    upsert('accounts', {
+    const saved: Account = {
       ...a,
       id: a.id || uid(),
+      shopId: shop?.id,
       name: a.name.trim(),
       email: a.email.trim().toLowerCase(),
       password: password || a.password,
       branchId: a.role === 'manager' ? a.branchId : undefined,
+    }
+    mutatePlatform((p) => {
+      const i = p.accounts.findIndex((x) => x.id === saved.id)
+      if (i >= 0) p.accounts[i] = saved
+      else p.accounts.push(saved)
     })
     toast(t('c.saved'))
     onClose()

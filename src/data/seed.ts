@@ -1,13 +1,18 @@
-// Deterministic demo data, generated relative to "today" so the dashboards always look alive.
+// Demo data: the platform registry plus one boutique ("Sharlin") with two branches and five clients in each.
+// Dates are relative to today so the dashboards always have something happening.
 import type {
-  Account, Alteration, Appointment, Branch, Client, DB, DressColor, ID, Lead, LeadSource, Order, Payment,
-  PaymentMethod, Product, ProductType, Silhouette, SmsLog, SmsTemplate, Staff,
+  Account, Alteration, AlterationStatus, Appointment, Branch, Client, DB, DressColor, ID, Lang, Lead, LeadSource, Order,
+  Payment, PaymentMethod, Platform, Product, ProductType, Shop, Silhouette, SmsTemplate, Staff,
 } from './types'
-import { addDays, diffDays, dotDate, parseDate, toDateStr, todayStr } from '../lib/date'
-import { buildPlan, conflictsFor, isoAt, orderTotal } from './domain'
+import { addDays, dotDate, todayStr } from '../lib/date'
+import { orderPrefixOf } from '../lib/brand'
+import { buildPlan, conflictsFor, isoAt, orderTotal, planRows } from './domain'
 
-export const DB_VERSION = 2
+/** Bump when the boutique data shape or demo content changes; stored data is then re-seeded. */
+export const DB_VERSION = 3
+export const PLATFORM_VERSION = 1
 export const DEMO_PASSWORD = '123456'
+export const DEMO_SHOP_ID = 'sharlin'
 
 function mulberry32(seed: number) {
   return () => {
@@ -50,45 +55,121 @@ export const DEFAULT_TEMPLATES: SmsTemplate[] = [
     en: 'Dear {name}, the alterations on your dress are done. Come in for a fitting any time. {phone}' } },
 ]
 
-export function createSeed(today: string = todayStr()): DB {
-  const rnd = mulberry32(20260928)
+/** Starting product types for every new boutique; each boutique can rename them or add more. */
+export function defaultProductTypes(createdAt: string): ProductType[] {
+  return [
+    { id: 't1', kind: 'dress', name: { uz: "Kelinlik ko'ylagi", ru: 'Свадебное платье', en: 'Wedding gown' }, createdAt },
+    { id: 't2', kind: 'dress', name: { uz: 'Kechki libos', ru: 'Вечернее платье', en: 'Evening dress' }, createdAt },
+    { id: 't3', kind: 'dress', name: { uz: 'Kelin salom libosi', ru: 'Платье «Келин салом»', en: 'Kelin salom dress' }, description: 'Milliy uslubdagi libos', createdAt },
+    { id: 't4', kind: 'accessory', name: { uz: 'Fata', ru: 'Фата', en: 'Veil' }, createdAt },
+    { id: 't5', kind: 'accessory', name: { uz: 'Poyabzal', ru: 'Обувь', en: 'Shoes' }, createdAt },
+    { id: 't6', kind: 'accessory', name: { uz: 'Taqinchoqlar', ru: 'Украшения', en: 'Jewelry' }, createdAt },
+    { id: 't7', kind: 'accessory', name: { uz: 'Toj va diadema', ru: 'Тиара и диадема', en: 'Tiara' }, createdAt },
+    { id: 't8', kind: 'accessory', name: { uz: 'Podyubnik', ru: 'Подъюбник', en: 'Petticoat' }, createdAt },
+  ]
+}
+
+/** An empty boutique, as the platform admin creates it. */
+export function createShopDb(shop: Shop, branches: Branch[]): DB {
+  return {
+    version: DB_VERSION,
+    branches,
+    productTypes: defaultProductTypes(shop.createdAt || new Date().toISOString()),
+    products: [],
+    clients: [],
+    leads: [],
+    appointments: [],
+    orders: [],
+    payments: [],
+    alterations: [],
+    staff: [],
+    smsTemplates: structuredClone(DEFAULT_TEMPLATES),
+    smsLog: [],
+    settings: {
+      storeName: shop.name,
+      orderPrefix: orderPrefixOf(shop.name),
+      lateFeePerDay: 300_000,
+      defaultSecurityDeposit: 2_000_000,
+      cleaningDays: 2,
+      defaultRentalDays: 3,
+    },
+    orderSeq: 1001,
+  }
+}
+
+export function createPlatformSeed(today: string = todayStr()): { platform: Platform; shops: Record<ID, DB> } {
+  const shop: Shop = { id: DEMO_SHOP_ID, name: 'Sharlin', createdAt: isoAt(addDays(today, -400), 10), active: true }
+  const accounts: Account[] = [
+    { id: 'admin', name: 'Administrator', email: 'admin@oqlibos.uz', password: DEMO_PASSWORD, role: 'admin', active: true },
+    { id: 'sh-founder', shopId: shop.id, name: 'Dilshoda Xaydaraliyeva', email: 'founder@sharlin.uz', password: DEMO_PASSWORD, role: 'founder', active: true },
+    { id: 'sh-lola', shopId: shop.id, name: 'Sharlin Lola', email: 'lola@sharlin.uz', password: DEMO_PASSWORD, role: 'manager', branchId: 'b1', active: true },
+    { id: 'sh-cola', shopId: shop.id, name: 'Sharlin Cola', email: 'cola@sharlin.uz', password: DEMO_PASSWORD, role: 'manager', branchId: 'b2', active: true },
+  ]
+  return {
+    platform: { version: PLATFORM_VERSION, shops: [shop], accounts },
+    shops: { [shop.id]: createDemoShopDb(shop, today) },
+  }
+}
+
+interface ClientSpec {
+  key: string
+  branchId: ID
+  name: string
+  lang: Lang
+  source: LeadSource
+}
+
+/** One order's story, in days relative to today. */
+interface OrderSpec {
+  client: string
+  type: 'rental' | 'sale'
+  /** Product type of the main piece. */
+  dress: ID
+  created: number
+  wedding: number
+  pickup: number
+  ret?: number
+  /** Where the order stands today: still booked, out with the client, or finished. */
+  stage: 'booked' | 'out' | 'done'
+  /** Days late when it came back (finished rentals). */
+  late?: number
+  damage?: number
+  /** Share of the total paid up front. */
+  deposit: number
+  installments: number
+  /** Installments (1-based, after the deposit) that weren't paid on their due date. */
+  unpaid?: number[]
+  /** Pays part of the next open installment today. */
+  payToday?: { method: PaymentMethod; share: number }
+  /** Method of the first payment. */
+  method?: PaymentMethod
+  extras?: ID[]
+  alteration?: { status: AlterationStatus; due: number; price: number; tasks: string; fittings: [number, string][] }
+}
+
+export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
+  const rnd = mulberry32(20261006)
   const int = (a: number, b: number) => a + Math.floor(rnd() * (b - a + 1))
   const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)]
   const chance = (p: number) => rnd() < p
   const round = (n: number, step = 100_000) => Math.round(n / step) * step
-  let idn = 0
-  const id = (p: string) => `${p}${(++idn).toString(36)}`
   const weighted = <T,>(pairs: [T, number][]): T => {
     const sum = pairs.reduce((s, [, w]) => s + w, 0)
     let r = rnd() * sum
     for (const [v, w] of pairs) if ((r -= w) <= 0) return v
     return pairs[0][0]
   }
-  const ts = (date: string) => isoAt(date, int(10, 18), pick([0, 10, 15, 20, 30, 40, 45, 50]))
+  let idn = 0
+  const id = (p: string) => `${p}${(++idn).toString(36)}`
+  const day = (n: number) => addDays(today, n)
+  const ts = (date: string) => (date === today ? isoAt(date, int(9, 10), pick([5, 20, 35, 50])) : isoAt(date, int(10, 18), pick([0, 15, 30, 45])))
+  const phone = () => `+998 ${pick(['90', '91', '93', '94', '97', '99', '88', '33', '95'])} ${int(100, 999)} ${int(10, 99)} ${int(10, 99)}`
 
-  // ---------- branches & accounts ----------
   const branches: Branch[] = [
-    { id: 'b1', name: 'Chilonzor', address: "Toshkent sh., Chilonzor tumani, Bunyodkor shoh ko'chasi, 12", phone: '+998 71 200 11 22', createdAt: isoAt(addDays(today, -540), 10) },
-    { id: 'b2', name: 'Yunusobod', address: "Toshkent sh., Yunusobod tumani, Amir Temur shoh ko'chasi, 108", phone: '+998 71 200 33 44', createdAt: isoAt(addDays(today, -300), 10) },
+    { id: 'b1', name: 'Sharlin Lola', address: 'Toshkent sh.', phone: '+998 71 200 11 22', createdAt: shop.createdAt },
+    { id: 'b2', name: 'Sharlin Cola', address: 'Toshkent sh.', phone: '+998 71 200 33 44', createdAt: isoAt(day(-220), 10) },
   ]
-  const accounts: Account[] = [
-    { id: 'a0', name: 'Kamola Rahimova', email: 'founder@oqlibos.uz', password: DEMO_PASSWORD, role: 'founder', active: true },
-    { id: 'a1', name: 'Madina Yusupova', email: 'filial1@oqlibos.uz', password: DEMO_PASSWORD, role: 'manager', branchId: 'b1', active: true },
-    { id: 'a2', name: 'Sevara Aliyeva', email: 'filial2@oqlibos.uz', password: DEMO_PASSWORD, role: 'manager', branchId: 'b2', active: true },
-  ]
-
-  // ---------- product types ----------
-  const typeCreated = isoAt(addDays(today, -540), 11)
-  const productTypes: ProductType[] = [
-    { id: 't1', kind: 'dress', name: { uz: "Kelinlik ko'ylagi", ru: 'Свадебное платье', en: 'Wedding gown' }, createdAt: typeCreated },
-    { id: 't2', kind: 'dress', name: { uz: 'Kechki libos', ru: 'Вечернее платье', en: 'Evening dress' }, createdAt: typeCreated },
-    { id: 't3', kind: 'dress', name: { uz: 'Kelin salom libosi', ru: 'Платье «Келин салом»', en: 'Kelin salom dress' }, description: 'Milliy uslubdagi libos', createdAt: typeCreated },
-    { id: 't4', kind: 'accessory', name: { uz: 'Fata', ru: 'Фата', en: 'Veil' }, createdAt: typeCreated },
-    { id: 't5', kind: 'accessory', name: { uz: 'Poyabzal', ru: 'Обувь', en: 'Shoes' }, createdAt: typeCreated },
-    { id: 't6', kind: 'accessory', name: { uz: 'Taqinchoqlar', ru: 'Украшения', en: 'Jewelry' }, createdAt: typeCreated },
-    { id: 't7', kind: 'accessory', name: { uz: 'Toj va diadema', ru: 'Тиара и диадема', en: 'Tiara' }, createdAt: typeCreated },
-    { id: 't8', kind: 'accessory', name: { uz: 'Podyubnik', ru: 'Подъюбник', en: 'Petticoat' }, createdAt: typeCreated },
-  ]
+  const db = createShopDb(shop, branches)
 
   // ---------- staff ----------
   const staffSpec: [ID, string, Staff['role']][] = [
@@ -99,8 +180,7 @@ export function createSeed(today: string = todayStr()): DB {
     ['b2', 'Zulfiya Toshmatova', 'tailor'], ['b2', 'Mohira Abdullayeva', 'sales'], ['b2', "Charos Yo'ldosheva", 'sales'],
     ['b2', 'Umida Rasulova', 'admin'],
   ]
-  const phone = () => `+998 ${pick(['90', '91', '93', '94', '97', '99', '88', '33', '95'])} ${int(100, 999)} ${int(10, 99)} ${int(10, 99)}`
-  const staff: Staff[] = staffSpec.map(([branchId, name, role]) => ({
+  db.staff = staffSpec.map(([branchId, name, role]) => ({
     id: id('s'),
     branchId,
     name,
@@ -111,24 +191,23 @@ export function createSeed(today: string = todayStr()): DB {
     workDays: pick([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6], [0, 1, 3, 4, 5, 6], [0, 2, 3, 4, 5, 6]]),
     shiftStart: pick(['09:00', '10:00']),
     shiftEnd: pick(['18:00', '19:00', '20:00']),
-    hiredAt: addDays(today, -int(60, 520)),
+    hiredAt: day(-int(60, 380)),
     active: true,
   }))
-  const staffOf = (b: ID, ...roles: Staff['role'][]) => staff.filter((s) => s.branchId === b && roles.includes(s.role))
+  const staffOf = (b: ID, ...roles: Staff['role'][]) => db.staff.filter((s) => s.branchId === b && roles.includes(s.role))
 
-  // ---------- products ----------
+  // ---------- inventory ----------
   const collections = ['Aurora', 'Seraphina', 'Lumière', 'Camelia', 'Valentina', 'Isabella', 'Grace', 'Eleganza', 'Swan', 'Milana', 'Amira', 'Bella', 'Celeste', 'Daria', 'Elise', 'Florence', 'Giselle', 'Helena', 'Iris', 'Jasmine', 'Katrin', 'Liora', 'Marisol', 'Noor', 'Odetta', 'Perla', 'Rosalie', 'Sofia', 'Tiana', 'Vivienne', 'Yasmin', 'Zara']
-  const designers = ['Oq Libos Atelier', 'Milano Sposa', 'Istanbul Bridal', 'Paris Couture', 'Dubai Line']
+  const designers = ['Sharlin Atelier', 'Milano Sposa', 'Istanbul Bridal', 'Paris Couture', 'Dubai Line']
   const gownStyles: Silhouette[] = ['a_line', 'ball_gown', 'mermaid', 'sheath', 'princess', 'empire']
-  const products: Product[] = []
   let code = 100
   for (const b of branches) {
     const names = [...collections].sort(() => rnd() - 0.5)
-    const gowns = b.id === 'b1' ? 28 : 22
-    const created = (d: number) => isoAt(addDays(today, -int(d, 520)), 11)
+    const gowns = b.id === 'b1' ? 22 : 18
+    const created = () => isoAt(day(-int(30, 380)), 11)
     for (let i = 0; i < gowns; i++) {
       const sale = round(int(12, 42) * 1_000_000, 500_000)
-      products.push({
+      db.products.push({
         id: id('p'), code: `WD-${++code}`, name: names[i], typeId: 't1', branchId: b.id,
         size: String(pick([38, 40, 42, 42, 44, 44, 46, 48])),
         color: weighted<DressColor>([['white', 5], ['ivory', 4], ['champagne', 2], ['blush', 1]]),
@@ -136,28 +215,28 @@ export function createSeed(today: string = todayStr()): DB {
         condition: weighted([['new', 2], ['excellent', 4], ['good', 3], ['fair', 1]]),
         status: 'available', mode: weighted<Product['mode']>([['both', 6], ['rent', 3], ['sale', 1.4]]),
         rentPrice: round(sale * (0.2 + rnd() * 0.08), 500_000), salePrice: sale, cost: round(sale * 0.52),
-        securityDeposit: round(sale * 0.08, 500_000), quantity: 1, createdAt: created(100),
+        securityDeposit: round(sale * 0.08, 500_000), quantity: 1, createdAt: created(),
       })
     }
     for (let i = 0; i < 6; i++) {
       const sale = round(int(3, 8) * 1_000_000, 500_000)
-      products.push({
+      db.products.push({
         id: id('p'), code: `EV-${++code}`, name: names[gowns + i] ?? `Soirée ${i + 1}`, typeId: 't2', branchId: b.id,
         size: String(pick([40, 42, 44, 46])), color: pick<DressColor>(['champagne', 'silver', 'gold', 'blush', 'red']),
         style: pick<Silhouette>(['sheath', 'mermaid', 'a_line', 'short']), designer: pick(designers),
         condition: pick(['excellent', 'good']), status: 'available', mode: 'both',
         rentPrice: round(sale * 0.25, 100_000), salePrice: sale, cost: round(sale * 0.5),
-        securityDeposit: 1_000_000, quantity: 1, createdAt: created(60),
+        securityDeposit: 1_000_000, quantity: 1, createdAt: created(),
       })
     }
     for (let i = 0; i < 4; i++) {
       const sale = round(int(7, 15) * 1_000_000, 500_000)
-      products.push({
+      db.products.push({
         id: id('p'), code: `KS-${++code}`, name: ['Guli', 'Oysha', 'Nodira', 'Zebo'][i], typeId: 't3', branchId: b.id,
         size: String(pick([42, 44, 46])), color: pick<DressColor>(['white', 'gold', 'red', 'ivory']), style: 'national',
-        designer: 'Oq Libos Atelier', condition: pick(['new', 'excellent']), status: 'available', mode: pick(['both', 'rent']),
+        designer: 'Sharlin Atelier', condition: pick(['new', 'excellent']), status: 'available', mode: 'both',
         rentPrice: round(sale * 0.25, 100_000), salePrice: sale, cost: round(sale * 0.5),
-        securityDeposit: 1_000_000, quantity: 1, createdAt: created(60),
+        securityDeposit: 1_000_000, quantity: 1, createdAt: created(),
       })
     }
     const acc: [ID, string, Product['mode'], number, number][] = [
@@ -170,320 +249,249 @@ export function createSeed(today: string = todayStr()): DB {
       ['t8', 'Podyubnik «Fatin»', 'both', 150_000, 500_000],
     ]
     for (const [typeId, name, mode, rent, sale] of acc) {
-      products.push({
+      db.products.push({
         id: id('p'), code: `AC-${++code}`, name, typeId, branchId: b.id,
         size: typeId === 't5' ? pick(['36', '37', '38', '39']) : '—',
         color: pick<DressColor>(['white', 'ivory', 'silver', 'gold']), condition: 'new', status: 'available', mode,
         rentPrice: rent, salePrice: sale, cost: round(sale * 0.45, 10_000), securityDeposit: 0,
-        quantity: chance(0.12) ? 1 : int(2, 9), createdAt: created(30),
+        quantity: chance(0.15) ? 1 : int(2, 9), createdAt: created(),
       })
     }
   }
 
-  // ---------- clients ----------
-  const firstNames = ['Madina', 'Dilnoza', 'Shahzoda', 'Nigora', 'Malika', 'Sevara', 'Gulnoza', 'Kamola', 'Zarina', 'Feruza', 'Nilufar', 'Aziza', 'Mohira', 'Laylo', 'Sabina', 'Umida', 'Yulduz', 'Charos', 'Munisa', 'Durdona', 'Shahnoza', 'Dildora', 'Gulchehra', 'Hilola', 'Iroda', 'Jasmina', 'Komila', 'Lola', 'Marjona', 'Nargiza', 'Ozoda', 'Parizoda', 'Rayhona', 'Sitora', 'Tamanno', 'Xurshida', 'Zilola', 'Anora', 'Barno', 'Diyora', 'Anna', 'Elina', 'Kristina', 'Alina', 'Viktoriya']
-  const russianNames = ['Anna', 'Elina', 'Kristina', 'Alina', 'Viktoriya']
-  const lastNames = ['Karimova', 'Rahimova', 'Tursunova', 'Yusupova', 'Aliyeva', 'Ismoilova', 'Saidova', 'Nazarova', 'Qodirova', 'Abdullayeva', 'Mirzayeva', 'Hasanova', 'Ergasheva', 'Toshmatova', 'Sobirova', 'Rasulova', 'Umarova', 'Xolmatova', 'Jurayeva', 'Normatova', 'Salimova', 'Hamidova', 'Ahmedova', 'Bakirova', 'Fayzullayeva']
-  const sources: [LeadSource, number][] = [['instagram', 5], ['telegram', 3], ['referral', 3], ['walk_in', 2], ['website', 1], ['other', 0.5]]
-  const clients: Client[] = []
-  const newClient = (branchId: ID, createdDate: string, weddingDate?: string): Client => {
-    const first = pick(firstNames)
-    const c: Client = {
-      id: id('c'), branchId, name: `${first} ${pick(lastNames)}`, phone: phone(), weddingDate,
-      lang: russianNames.includes(first) || chance(0.15) ? 'ru' : 'uz',
-      source: weighted(sources),
+  // ---------- five clients per branch ----------
+  const clientSpecs: ClientSpec[] = [
+    { key: 'madina', branchId: 'b1', name: 'Madina Yusupova', lang: 'uz', source: 'instagram' },
+    { key: 'nigora', branchId: 'b1', name: 'Nigora Rasulova', lang: 'uz', source: 'referral' },
+    { key: 'sevinch', branchId: 'b1', name: 'Sevinch Rahimova', lang: 'uz', source: 'telegram' },
+    { key: 'shahzoda', branchId: 'b1', name: 'Shahzoda Tursunova', lang: 'uz', source: 'instagram' },
+    { key: 'kamola', branchId: 'b1', name: 'Kamola Saidova', lang: 'uz', source: 'walk_in' },
+    { key: 'dilfuza', branchId: 'b2', name: 'Dilfuza Ergasheva', lang: 'uz', source: 'telegram' },
+    { key: 'malika', branchId: 'b2', name: 'Malika Xolmatova', lang: 'ru', source: 'instagram' },
+    { key: 'zarina', branchId: 'b2', name: 'Zarina Qodirova', lang: 'ru', source: 'referral' },
+    { key: 'lobar', branchId: 'b2', name: 'Lobar Abdurahmonova', lang: 'uz', source: 'instagram' },
+    { key: 'aziza', branchId: 'b2', name: 'Aziza Umarova', lang: 'uz', source: 'website' },
+  ]
+  const clients = new Map<string, Client>()
+  for (const c of clientSpecs) {
+    const client: Client = {
+      id: id('c'), branchId: c.branchId, name: c.name, phone: phone(), lang: c.lang, source: c.source,
       measurements: {
-        bust: int(80, 98), waist: int(58, 78), hips: int(86, 106), height: int(155, 178),
-        shoulder: int(36, 42), sleeve: int(56, 62), length: int(140, 160), shoe: int(36, 40),
-        updatedAt: createdDate,
+        bust: int(80, 96), waist: int(58, 74), hips: int(86, 102), height: int(156, 176),
+        shoulder: int(36, 41), sleeve: int(56, 62), length: int(140, 158), shoe: int(36, 40),
       },
-      createdAt: ts(createdDate),
+      createdAt: '',
     }
-    clients.push(c)
-    return c
+    clients.set(c.key, client)
+    db.clients.push(client)
   }
 
-  // ---------- orders ----------
-  const settings = { storeName: 'Oq Libos', lateFeePerDay: 300_000, defaultSecurityDeposit: 2_000_000, cleaningDays: 2, defaultRentalDays: 3 }
-  const orders: Order[] = []
-  const payments: Payment[] = []
-  const alterations: Alteration[] = []
-  const appointments: Appointment[] = []
-  const season = [0.5, 0.5, 0.6, 0.9, 1.0, 1.0, 0.8, 1.1, 1.3, 1.4, 1.1, 0.6]
   const method = (): PaymentMethod => weighted([['cash', 35], ['card', 20], ['terminal', 15], ['click', 12], ['payme', 10], ['transfer', 8]])
-
-  const freeDress = (branchId: ID, kind: 'rental' | 'sale', typeId: ID, start: string, end: string) => {
-    const pool = products.filter(
-      (p) => p.branchId === branchId && p.typeId === typeId && (kind === 'rental' ? p.mode !== 'sale' : p.mode !== 'rent'),
+  const freeDress = (branchId: ID, kind: OrderSpec['type'], typeId: ID, start: string, end: string) => {
+    const free = db.products.filter(
+      (p) => p.branchId === branchId && p.typeId === typeId && (kind === 'rental' ? p.mode !== 'sale' : p.mode !== 'rent') &&
+        !conflictsFor(db, p.id, start, end, undefined, true).length,
     )
-    for (let tries = 0; tries < 25 && pool.length; tries++) {
-      const p = pick(pool)
-      if (!conflictsFor({ orders, settings }, p.id, start, end, undefined, true).length) return p
-    }
-    return undefined
+    return free.length ? pick(free) : undefined
   }
-  const accessory = (branchId: ID, typeId: ID, kind: 'rental' | 'sale') => {
-    const pool = products.filter((p) => p.branchId === branchId && p.typeId === typeId && (kind === 'rental' ? p.mode !== 'sale' : p.mode !== 'rent'))
-    return pool.length ? pick(pool) : undefined
-  }
+  const accessory = (branchId: ID, typeId: ID, kind: OrderSpec['type']) =>
+    db.products.find((p) => p.branchId === branchId && p.typeId === typeId && (kind === 'rental' ? p.mode !== 'sale' : p.mode !== 'rent'))
 
-  /** New gowns arrive through the year, so sales don't exhaust the rack. */
-  const restock = (branchId: ID, before: string): Product => {
-    const sale = round(int(14, 45) * 1_000_000, 500_000)
-    const p: Product = {
-      id: id('p'), code: `WD-${++code}`, name: `${pick(collections)} ${pick(['Royal', 'Classic', 'Luxe', 'Bloom', 'Étoile'])}`, typeId: 't1', branchId,
-      size: String(pick([38, 40, 42, 44, 46])), color: weighted<DressColor>([['white', 5], ['ivory', 4], ['champagne', 2]]),
-      style: pick(gownStyles), designer: pick(designers), condition: 'new', status: 'available', mode: pick(['sale', 'both']),
-      rentPrice: round(sale * 0.22, 500_000), salePrice: sale, cost: round(sale * 0.52), securityDeposit: round(sale * 0.08, 500_000),
-      quantity: 1, createdAt: isoAt(addDays(before, -int(3, 20)), 11),
-    }
-    products.push(p)
-    return p
+  const appointment = (client: Client, type: Appointment['type'], date: string, time: string, duration: number, productIds: ID[], staffId?: ID, status?: Appointment['status']) => {
+    db.appointments.push({
+      id: id('ap'), branchId: client.branchId, clientId: client.id, type, date, time, duration, productIds,
+      staffId: staffId ?? pick(staffOf(client.branchId, 'stylist')).id,
+      status: status ?? (date < today ? 'completed' : 'scheduled'),
+      createdAt: isoAt(addDays(date, -int(1, 4)), 12),
+    })
   }
 
-  interface Forced { type?: 'rental' | 'sale'; pickupOffset?: number; returnOffset?: number; overdue?: boolean; keepBooked?: boolean }
-
-  /** Builds one order with its payments, appointments and alteration; its status follows from today's date. */
-  const makeOrder = (branchId: ID, wedding: string, forced: Forced = {}) => {
-    const type = forced.type ?? (chance(0.7) ? 'rental' : 'sale')
-    const pickupDate = addDays(wedding, forced.pickupOffset ?? (type === 'rental' ? -int(1, 2) : -int(3, 7)))
-    const returnDate = type === 'rental' ? addDays(wedding, forced.returnOffset ?? int(1, 3)) : undefined
-    let created = addDays(wedding, -(type === 'sale' ? int(45, 110) : int(14, 75)))
-    if (created > today) created = addDays(today, -int(0, 3))
-    if (created >= pickupDate) created = addDays(pickupDate, -2)
-    const typeId = weighted([['t1', 8], ['t3', 1.2], ['t2', 1]])
-    let dress = type === 'sale'
-      ? freeDress(branchId, type, typeId, created, '9999-12-31')
-      : freeDress(branchId, type, typeId, pickupDate, addDays(returnDate!, settings.cleaningDays))
-    if (!dress && type === 'sale' && typeId === 't1') dress = restock(branchId, created)
-    if (!dress) return undefined
-    const items = [{ productId: dress.id, price: type === 'rental' ? dress.rentPrice : dress.salePrice, qty: 1 }]
-    const extras: [ID, number][] = type === 'rental' ? [['t4', 0.5], ['t7', 0.25], ['t8', 0.3]] : [['t5', 0.6], ['t6', 0.4], ['t4', 0.45]]
-    for (const [t, p] of extras) {
-      if (!chance(p)) continue
-      const a = accessory(branchId, t, type)
-      if (a && !items.some((i) => i.productId === a.id)) items.push({ productId: a.id, price: type === 'rental' ? a.rentPrice : a.salePrice, qty: 1 })
+  const book = (s: OrderSpec) => {
+    const client = clients.get(s.client)!
+    const branchId = client.branchId
+    const created = day(s.created)
+    const pickup = day(s.pickup)
+    const ret = s.ret != null ? day(s.ret) : undefined
+    const dress = s.type === 'sale'
+      ? freeDress(branchId, 'sale', s.dress, created, '9999-12-31')
+      : freeDress(branchId, 'rental', s.dress, pickup, addDays(ret!, db.settings.cleaningDays))
+    if (!dress) return
+    const items = [{ productId: dress.id, price: s.type === 'rental' ? dress.rentPrice : dress.salePrice, qty: 1 }]
+    for (const typeId of s.extras ?? []) {
+      const a = accessory(branchId, typeId, s.type)
+      if (a) items.push({ productId: a.id, price: s.type === 'rental' ? a.rentPrice : a.salePrice, qty: 1 })
     }
-    const client = newClient(branchId, addDays(created, -int(0, 10)), wedding)
-    const consultant = pick(staffOf(branchId, 'sales', 'manager'))
-    const subtotal = items.reduce((s, i) => s + i.price, 0)
-    const discount = chance(0.2) ? round(subtotal * pick([0.05, 0.1])) : 0
+    const consultant = pick(staffOf(branchId, 'sales'))
     const o: Order = {
-      id: id('o'), number: '', branchId, clientId: client.id, type, status: 'booked', items, discount, charges: [],
-      weddingDate: wedding, pickupDate, returnDate,
-      securityDeposit: type === 'rental' ? Math.max(dress.securityDeposit, settings.defaultSecurityDeposit) : 0,
-      lateFeePerDay: settings.lateFeePerDay, installments: [], staffId: consultant.id, createdAt: ts(created),
+      id: id('o'), number: '', branchId, clientId: client.id, type: s.type, status: 'booked', items, discount: 0, charges: [],
+      weddingDate: day(s.wedding), pickupDate: pickup, returnDate: ret,
+      securityDeposit: s.type === 'rental' ? Math.max(dress.securityDeposit, db.settings.defaultSecurityDeposit) : 0,
+      lateFeePerDay: db.settings.lateFeePerDay, installments: [], staffId: consultant.id, createdAt: ts(created),
     }
-    const cancelled = !forced.type && created < addDays(today, -20) && chance(0.04)
+    if (!client.createdAt || o.createdAt < client.createdAt) client.createdAt = isoAt(addDays(created, -3), 11)
+    // The gown order sets the wedding date; other dresses are for related events (kelin salom, evening party).
+    if (s.dress === 't1' || !client.weddingDate) client.weddingDate = day(s.wedding)
+    client.measurements.updatedAt = created
 
-    // Alterations happen mostly on bought gowns, sometimes a temporary hem on a rental.
-    let alt: Alteration | undefined
-    if (!cancelled && (type === 'sale' ? chance(0.85) : chance(0.3))) {
+    if (s.alteration) {
       const tailor = pick(staffOf(branchId, 'tailor'))
-      const due = addDays(pickupDate, -int(1, 2))
-      const price = type === 'sale' ? round(int(3, 12) * 100_000) : round(int(2, 5) * 100_000)
-      const first = addDays(created, int(4, 12))
-      const dates = [first < due ? first : addDays(due, -1), addDays(due, -1)].filter((d, i, a) => a.indexOf(d) === i && d > created)
-      const fittings = dates.map((d) => ({ id: id('f'), date: d, time: pick(['11:00', '14:00', '16:30']), done: d < today }))
-      const status: Alteration['status'] =
-        pickupDate <= today && !forced.keepBooked ? 'delivered'
-          : due < today ? 'ready'
-          : fittings.some((f) => f.done) ? pick(['fitting', 'in_progress'])
-          : diffDays(today, due) < 20 ? 'in_progress' : 'pending'
-      alt = {
-        id: id('al'), branchId, clientId: client.id, productId: dress.id, orderId: o.id, tailorId: tailor.id,
-        tasks: type === 'sale'
-          ? pick(['Belini 2 sm toraytirish, etakni 4 sm qisqartirish', 'Korsetni moslash, yengini qisqartirish', "Ko'krak qismini moslash, shleyfga ilgak tikish", "Etakni qisqartirish, marjon qo'shish"])
-          : pick(["Etakni vaqtincha 3 sm ko'tarish", 'Belini vaqtincha toraytirish', "Bog'ichlarni moslash"]),
-        measurements: { ...client.measurements }, fittings, dueDate: due, price, status, createdAt: ts(addDays(created, 1)),
+      const alt: Alteration = {
+        id: id('al'), branchId, clientId: client.id, productId: dress.id, orderId: o.id, tailorId: tailor.id, tasks: s.alteration.tasks,
+        measurements: { ...client.measurements },
+        fittings: s.alteration.fittings.map(([d, time]) => ({ id: id('f'), date: day(d), time, done: day(d) < today })),
+        dueDate: day(s.alteration.due), price: s.alteration.price, status: s.alteration.status, createdAt: ts(addDays(created, 1)),
       }
-      alterations.push(alt)
-      o.charges.push({ id: id('ch'), kind: 'alteration', amount: price, date: addDays(created, 1) })
+      db.alterations.push(alt)
+      o.charges.push({ id: id('ch'), kind: 'alteration', amount: alt.price, date: addDays(created, 1) })
+      for (const f of alt.fittings) appointment(client, 'fitting', f.date, f.time ?? '15:00', 60, [dress.id], tailor.id)
     }
 
     const total = orderTotal(o)
-    const deposit = round(total * pick([0.3, 0.4, 0.5]))
-    o.installments = buildPlan(total, deposit, type === 'sale' ? int(1, 3) : int(0, 1), created, addDays(pickupDate, -1))
-
-    const pay = (kind: Payment['kind'], amount: number, date: string, extra?: Partial<Payment>) => {
+    o.installments = buildPlan(total, round(total * s.deposit), s.installments, created, addDays(pickup, -1))
+    const pay = (kind: Payment['kind'], amount: number, date: string, extra: Partial<Payment> = {}) => {
       if (amount <= 0) return
-      payments.push({ id: id('y'), branchId, orderId: o.id, clientId: client.id, amount, kind, method: method(), date: ts(date), staffId: consultant.id, ...extra })
+      db.payments.push({ id: id('y'), branchId, orderId: o.id, clientId: client.id, amount, kind, method: method(), date: ts(date), staffId: consultant.id, ...extra })
     }
-    o.installments.forEach((ins, i) => {
-      if (ins.dueDate > today) return
-      if (i === 0) return pay('advance', ins.amount, created)
-      if (cancelled) return
-      const skipped = pickupDate > today && ins.dueDate > addDays(today, -12) && chance(0.3)
-      if (!skipped) pay('installment', ins.amount, ins.dueDate)
-    })
+    const paidSoFar = () => db.payments.filter((p) => p.orderId === o.id && p.kind !== 'security').reduce((x, p) => x + p.amount, 0)
 
-    const handedOver = pickupDate < today || (pickupDate === today && !forced.keepBooked)
-    if (cancelled) {
-      o.status = 'cancelled'
-    } else if (handedOver) {
-      const paidSoFar = payments.filter((p) => p.orderId === o.id).reduce((s, p) => s + p.amount, 0)
-      pay('balance', total - paidSoFar, pickupDate)
-      o.pickedUpAt = isoAt(pickupDate, int(10, 13))
-      if (type === 'sale') {
+    o.installments.forEach((ins, i) => {
+      if (i === 0) return pay('advance', ins.amount, created, s.method ? { method: s.method } : {})
+      if (ins.dueDate <= today && !s.unpaid?.includes(i)) pay('installment', ins.amount, ins.dueDate)
+    })
+    if (s.payToday) {
+      const open = planRows(o, paidSoFar(), today).find((r) => r.state !== 'paid')
+      if (open) pay('installment', round((open.amount - open.paid) * s.payToday.share), today, { method: s.payToday.method })
+    }
+
+    if (s.stage !== 'booked') {
+      pay('balance', total - paidSoFar(), pickup)
+      o.pickedUpAt = isoAt(pickup, 10, 30)
+      if (s.type === 'sale') {
         o.status = 'completed'
       } else {
-        pay('security', o.securityDeposit, pickupDate, { method: 'cash' })
-        if (returnDate! < today && !forced.overdue) {
-          const late = chance(0.06) ? int(1, 2) : 0
-          const back = addDays(returnDate!, late) < today ? addDays(returnDate!, late) : returnDate!
-          o.returnedAt = isoAt(back, int(11, 17))
+        pay('security', o.securityDeposit, pickup, { method: 'cash' })
+        o.status = 'picked_up'
+        if (s.stage === 'done') {
+          const back = addDays(ret!, s.late ?? 0)
+          o.returnedAt = isoAt(back, 15, 20)
           o.status = 'completed'
-          let deducted = 0
-          if (late) {
-            const fee = late * o.lateFeePerDay
+          let kept = 0
+          if (s.late) {
+            const fee = s.late * o.lateFeePerDay
             o.charges.push({ id: id('ch'), kind: 'late_fee', amount: fee, date: back })
             pay('fee', fee, back, { fromDeposit: true, method: 'cash' })
-            deducted += fee
+            kept += fee
           }
-          if (chance(0.07)) {
-            const dmg = round(int(3, 9) * 100_000)
-            const note = pick(["Etakda dog'", 'Marjon uzilgan', 'Fatin yirtilgan'])
-            o.charges.push({ id: id('ch'), kind: 'damage', amount: dmg, note, date: back })
-            o.damageNotes = note
-            pay('fee', dmg, back, { fromDeposit: true, method: 'cash' })
-            deducted += dmg
+          if (s.damage) {
+            o.charges.push({ id: id('ch'), kind: 'damage', amount: s.damage, note: "Etakda dog'", date: back })
+            o.damageNotes = "Etakda dog'"
+            pay('fee', s.damage, back, { fromDeposit: true, method: 'cash' })
+            kept += s.damage
           }
-          pay('security_return', Math.max(0, o.securityDeposit - deducted), back, { method: 'cash' })
-        } else {
-          o.status = 'picked_up'
+          pay('security_return', Math.max(0, o.securityDeposit - kept), back, { method: 'cash' })
         }
       }
     }
-    orders.push(o)
+    db.orders.push(o)
 
-    // Appointments around this order.
-    const stylist = pick(staffOf(branchId, 'stylist'))
-    const appt = (kind: Appointment['type'], date: string, time: string, dur: number, productIds: ID[], staffId = stylist.id) => {
-      const status: Appointment['status'] = cancelled && date > created ? 'cancelled' : date < today ? 'completed' : 'scheduled'
-      appointments.push({ id: id('ap'), branchId, clientId: client.id, type: kind, date, time, duration: dur, staffId, productIds, status, createdAt: ts(addDays(date, -int(1, 6))) })
-    }
-    const alsoShown = products.filter((p) => p.branchId === branchId && p.typeId === typeId && p.id !== dress.id).slice(0, 2).map((p) => p.id)
-    appt('viewing', addDays(created, -int(0, 6)), pick(['10:30', '11:00', '12:00', '14:00', '15:30', '17:00']), 90, [dress.id, ...alsoShown])
-    appt('measurement', created, pick(['11:30', '13:00', '16:00']), 45, [dress.id])
-    if (Math.abs(diffDays(today, wedding)) < 75) {
-      if (alt) for (const f of alt.fittings) appt('fitting', f.date, f.time ?? '14:00', 60, [dress.id], alt.tailorId)
-      appt('pickup', pickupDate, pick(['10:00', '11:00', '12:00', '16:00']), 30, items.map((i) => i.productId))
-      if (returnDate) appt('return', returnDate, pick(['11:00', '12:00', '15:00', '17:00']), 30, items.map((i) => i.productId))
-    }
-    return o
+    const sameType = db.products.filter((p) => p.branchId === branchId && p.typeId === s.dress && p.id !== dress.id).slice(0, 2).map((p) => p.id)
+    appointment(client, 'viewing', addDays(created, -2), '11:00', 90, [dress.id, ...sameType])
+    appointment(client, 'measurement', created, '12:30', 45, [dress.id])
+    appointment(client, 'pickup', pickup, '10:00', 30, items.map((i) => i.productId))
+    if (ret) appointment(client, 'return', ret, '16:00', 30, items.map((i) => i.productId))
   }
 
-  // A year of history plus bookings for the coming months.
-  for (const b of branches) {
-    const base = b.id === 'b1' ? 7.5 : 5.2
-    const opened = b.createdAt.slice(0, 10)
-    for (let m = -12; m <= 4; m++) {
-      const first = parseDate(today)
-      first.setDate(1)
-      first.setMonth(first.getMonth() + m)
-      const horizon = m > 0 ? Math.max(0.2, 1 - m * 0.22) : 1
-      const n = Math.round(base * season[first.getMonth()] * horizon * (0.85 + rnd() * 0.3))
-      const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
-      for (let i = 0; i < n; i++) {
-        const wedding = toDateStr(new Date(first.getFullYear(), first.getMonth(), int(1, daysInMonth)))
-        if (Math.abs(diffDays(today, wedding)) <= 4) continue // near-today cases are crafted below
-        if (addDays(wedding, -40) < opened) continue
-        makeOrder(b.id, wedding)
-      }
-    }
-    // Crafted near-today cases so "Today" always has pickups, returns and an overdue rental.
-    makeOrder(b.id, addDays(today, 1), { type: 'rental', pickupOffset: -1, keepBooked: true }) // pickup today
-    makeOrder(b.id, addDays(today, 2), { type: 'rental', pickupOffset: -1 }) // pickup tomorrow
-    makeOrder(b.id, addDays(today, 3), { type: 'sale', pickupOffset: -2 }) // sale handover tomorrow
-    makeOrder(b.id, addDays(today, -2), { type: 'rental', pickupOffset: -1, returnOffset: 2 }) // return today
-    makeOrder(b.id, addDays(today, -1), { type: 'rental', pickupOffset: -1, returnOffset: 2 }) // return tomorrow
-    makeOrder(b.id, addDays(today, -5), { type: 'rental', pickupOffset: -1, returnOffset: 2, overdue: true }) // 3 days late
-    makeOrder(b.id, today, { type: 'rental', pickupOffset: -1, returnOffset: 2 }) // wedding today
-    makeOrder(b.id, addDays(today, 6), { type: 'rental' })
-    makeOrder(b.id, addDays(today, 10), { type: 'sale' })
-  }
+  // Sharlin Lola
+  book({ client: 'madina', type: 'rental', dress: 't1', created: -95, wedding: -62, pickup: -63, ret: -60, stage: 'done', deposit: 0.4, installments: 1, extras: ['t4'] })
+  book({ client: 'madina', type: 'rental', dress: 't3', created: -70, wedding: -58, pickup: -59, ret: -57, stage: 'done', deposit: 0.5, installments: 0 })
+  book({
+    client: 'nigora', type: 'sale', dress: 't1', created: -120, wedding: -30, pickup: -33, stage: 'done', deposit: 0.3, installments: 2, extras: ['t5', 't6'],
+    alteration: { status: 'delivered', due: -35, price: 600_000, tasks: 'Belini 2 sm toraytirish, etakni 4 sm qisqartirish', fittings: [[-60, '14:00'], [-36, '16:30']] },
+  })
+  book({ client: 'sevinch', type: 'rental', dress: 't1', created: -40, wedding: -2, pickup: -3, ret: 0, stage: 'out', deposit: 0.4, installments: 1, extras: ['t4', 't8'] })
+  book({
+    client: 'shahzoda', type: 'rental', dress: 't1', created: -25, wedding: 1, pickup: 0, ret: 3, stage: 'booked', deposit: 0.3, installments: 2,
+    unpaid: [2], payToday: { method: 'transfer', share: 0.5 }, extras: ['t7'],
+    alteration: { status: 'ready', due: -1, price: 300_000, tasks: "Etakni vaqtincha 3 sm ko'tarish", fittings: [[-1, '16:00']] },
+  })
+  book({
+    client: 'kamola', type: 'sale', dress: 't1', created: -50, wedding: 24, pickup: 20, stage: 'booked', deposit: 0.3, installments: 2,
+    alteration: { status: 'fitting', due: 18, price: 900_000, tasks: 'Korsetni moslash, yengini qisqartirish', fittings: [[-10, '14:00'], [0, '15:00'], [10, '15:00']] },
+  })
+  book({ client: 'kamola', type: 'rental', dress: 't2', created: 0, wedding: 30, pickup: 29, ret: 31, stage: 'booked', deposit: 0.5, installments: 0, method: 'cash' })
+
+  // Sharlin Cola
+  book({ client: 'dilfuza', type: 'rental', dress: 't1', created: -80, wedding: -41, pickup: -42, ret: -39, stage: 'done', late: 1, damage: 500_000, deposit: 0.4, installments: 1 })
+  book({
+    client: 'malika', type: 'sale', dress: 't1', created: -150, wedding: -75, pickup: -78, stage: 'done', deposit: 0.3, installments: 3, extras: ['t5', 't4'],
+    alteration: { status: 'delivered', due: -80, price: 700_000, tasks: "Ko'krak qismini moslash, shleyfga ilgak tikish", fittings: [[-100, '13:00'], [-82, '15:30']] },
+  })
+  book({ client: 'malika', type: 'rental', dress: 't2', created: -20, wedding: -10, pickup: -11, ret: -9, stage: 'done', deposit: 1, installments: 0 })
+  book({ client: 'zarina', type: 'rental', dress: 't1', created: -35, wedding: -5, pickup: -6, ret: -3, stage: 'out', deposit: 0.4, installments: 1, extras: ['t4'] })
+  book({
+    client: 'lobar', type: 'rental', dress: 't1', created: -30, wedding: 3, pickup: 2, ret: 5, stage: 'booked', deposit: 0.3, installments: 2,
+    payToday: { method: 'card', share: 0.5 }, extras: ['t8'],
+    alteration: { status: 'in_progress', due: 1, price: 200_000, tasks: 'Belini vaqtincha toraytirish', fittings: [[1, '11:00']] },
+  })
+  book({ client: 'aziza', type: 'rental', dress: 't1', created: 0, wedding: 45, pickup: 44, ret: 47, stage: 'booked', deposit: 0.3, installments: 1, method: 'click', extras: ['t4', 't7'] })
+
+  // A second visit for Malika, who wants a kelin salom dress for her sister.
+  const malika = clients.get('malika')!
+  appointment(malika, 'viewing', today, '16:30', 60, db.products.filter((p) => p.branchId === 'b2' && p.typeId === 't3').slice(0, 3).map((p) => p.id))
 
   // Order numbers follow creation time.
-  orders.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  orders.forEach((o, i) => (o.number = `OL-${1001 + i}`))
+  db.orders.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  db.orders.forEach((o, i) => (o.number = `${db.settings.orderPrefix}-${1001 + i}`))
+  db.orderSeq = 1001 + db.orders.length
 
-  // ---------- product statuses ----------
-  const kindOf = new Map(productTypes.map((t) => [t.id, t.kind]))
-  for (const p of products) {
-    if (kindOf.get(p.typeId) === 'accessory') continue
-    const mine = orders.filter((o) => o.status !== 'cancelled' && o.items.some((i) => i.productId === p.id))
+  // ---------- dress statuses ----------
+  const dressTypes = new Set(db.productTypes.filter((t) => t.kind === 'dress').map((t) => t.id))
+  for (const p of db.products) {
+    if (!dressTypes.has(p.typeId)) continue
+    const mine = db.orders.filter((o) => o.status !== 'cancelled' && o.items.some((i) => i.productId === p.id))
     if (mine.some((o) => o.type === 'sale' && o.status === 'completed')) {
       p.status = 'sold'
       p.quantity = 0
     } else if (mine.some((o) => o.type === 'rental' && o.status === 'picked_up')) p.status = 'rented'
-    else if (alterations.some((a) => a.productId === p.id && ['pending', 'in_progress', 'fitting'].includes(a.status))) p.status = 'alteration'
+    else if (db.alterations.some((a) => a.productId === p.id && ['pending', 'in_progress', 'fitting'].includes(a.status))) p.status = 'alteration'
     else if (mine.some((o) => o.status === 'booked')) p.status = 'reserved'
-    else if (mine.some((o) => o.returnedAt && diffDays(o.returnedAt.slice(0, 10), today) < settings.cleaningDays)) p.status = 'cleaning'
   }
-  products.filter((p) => p.status === 'available' && p.typeId === 't1').slice(0, 2).forEach((p) => (p.status = 'cleaning'))
-
-  // ---------- walk-in viewings (not every visit turns into an order) ----------
   for (const b of branches) {
-    for (let d = -56; d <= 14; d++) {
-      const date = addDays(today, d)
-      const count = d === 0 ? 3 : chance(0.45) ? 1 : 0
-      for (let i = 0; i < count; i++) {
-        const c = newClient(b.id, addDays(date, -int(0, 4)), chance(0.6) ? addDays(date, int(30, 160)) : undefined)
-        const status: Appointment['status'] = date < today ? weighted([['completed', 8], ['no_show', 1.5], ['cancelled', 1]]) : 'scheduled'
-        const dresses = products.filter((p) => p.branchId === b.id && p.typeId === 't1' && p.status !== 'sold').sort(() => rnd() - 0.5).slice(0, int(2, 4)).map((p) => p.id)
-        appointments.push({
-          id: id('ap'), branchId: b.id, clientId: c.id, type: chance(0.8) ? 'viewing' : 'measurement', date,
-          time: d === 0 ? ['10:00', '13:30', '16:00'][i] : pick(['10:00', '11:30', '13:00', '14:30', '16:00', '17:30']),
-          duration: 60, staffId: pick(staffOf(b.id, 'stylist')).id, productIds: dresses, status, createdAt: ts(addDays(date, -int(1, 7))),
-        })
-      }
-    }
+    const resting = db.products.find((p) => p.branchId === b.id && p.typeId === 't1' && p.status === 'available')
+    if (resting) resting.status = 'cleaning'
   }
 
   // ---------- leads ----------
-  const leads: Lead[] = []
-  for (const b of branches) {
-    const stages: Lead['stage'][] = ['new', 'new', 'new', 'new', 'contacted', 'contacted', 'contacted', 'appointment', 'appointment', 'appointment', 'won', 'won', 'lost', 'lost']
-    for (const stage of stages) {
-      const created = addDays(today, -(stage === 'new' ? int(0, 3) : int(2, 28)))
-      const lead: Lead = {
-        id: id('l'), branchId: b.id, name: `${pick(firstNames)} ${pick(lastNames)}`, phone: phone(), source: weighted(sources),
-        interest: weighted([['rent', 5], ['buy', 3], ['undecided', 2]]),
-        weddingDate: chance(0.8) ? addDays(today, int(20, 200)) : undefined,
-        budget: chance(0.6) ? round(int(3, 30) * 1_000_000, 1_000_000) : undefined,
-        stage, staffId: pick(staffOf(b.id, 'sales', 'stylist')).id,
-        notes: pick([undefined, "Instagram'dagi reklamadan yozdi", "Pishiq ko'ylak qidiryapti", 'Dugonasi tavsiya qildi', "Narxlarni so'radi", "Kechqurun qo'ng'iroq qilish kerak"]),
-        createdAt: ts(created),
-      }
-      if (stage === 'won') {
-        const c = newClient(b.id, addDays(created, 1), lead.weddingDate)
-        c.name = lead.name
-        c.phone = lead.phone
-        c.source = lead.source
-        lead.clientId = c.id
-      }
-      leads.push(lead)
-    }
+  const lead = (branchId: ID, name: string, stage: Lead['stage'], created: number, extra: Partial<Lead> = {}) => {
+    db.leads.push({
+      id: id('l'), branchId, name, phone: phone(), source: 'instagram', interest: 'rent', stage,
+      staffId: pick(staffOf(branchId, 'sales', 'stylist')).id, createdAt: isoAt(day(created), int(10, 18), 15), ...extra,
+    })
   }
+  const kamola = clients.get('kamola')!
+  const aziza = clients.get('aziza')!
+  lead('b1', 'Gulnoza Hamidova', 'new', -1, { weddingDate: day(60), notes: "Instagram'dagi reklamadan yozdi" })
+  lead('b1', 'Rayhona Salimova', 'new', 0, { source: 'telegram', interest: 'buy', weddingDate: day(90), budget: 25_000_000 })
+  lead('b1', 'Sitora Normatova', 'contacted', -5, { source: 'referral', weddingDate: day(40), notes: 'Dugonasi tavsiya qildi' })
+  lead('b1', kamola.name, 'won', -55, { phone: kamola.phone, source: kamola.source, interest: 'buy', clientId: kamola.id, weddingDate: kamola.weddingDate })
+  lead('b1', 'Barno Ahmedova', 'lost', -20, { source: 'website', interest: 'undecided', notes: "Narxlarni so'radi" })
+  lead('b2', 'Mohinur Jurayeva', 'new', 0, { weddingDate: day(75) })
+  lead('b2', 'Diyora Bakirova', 'contacted', -4, { source: 'telegram', interest: 'buy', budget: 30_000_000, notes: "Pishiq ko'ylak qidiryapti" })
+  lead('b2', 'Iroda Hamidova', 'appointment', -6, { weddingDate: day(50) })
+  lead('b2', aziza.name, 'won', -3, { phone: aziza.phone, source: aziza.source, clientId: aziza.id, weddingDate: aziza.weddingDate })
+  lead('b2', 'Ozoda Fayzullayeva', 'lost', -18, { source: 'referral', interest: 'undecided' })
 
-  // ---------- SMS already sent this week ----------
-  const smsLog: SmsLog[] = []
-  const clientById = new Map(clients.map((c) => [c.id, c]))
-  const recent = appointments.filter((x) => x.date > addDays(today, -6) && x.date <= today && x.status !== 'cancelled').slice(0, 30)
-  for (const a of recent) {
-    const c = clientById.get(a.clientId)!
+  // ---------- SMS sent yesterday for today's visits ----------
+  for (const a of db.appointments.filter((x) => x.date === today && x.type !== 'pickup' && x.type !== 'return')) {
+    const c = db.clients.find((x) => x.id === a.clientId)!
     const branch = branches.find((b) => b.id === a.branchId)!
     const text = DEFAULT_TEMPLATES[0].text[c.lang]
       .replace('{name}', c.name.split(' ')[0]).replace('{date}', dotDate(a.date)).replace('{time}', a.time)
-      .replace('{store}', settings.storeName).replace('{phone}', branch.phone)
-    smsLog.push({ id: id('sm'), branchId: a.branchId, clientId: c.id, phone: c.phone, type: 'appointment', text, refKey: `appointment:${a.id}`, sentAt: isoAt(addDays(a.date, -1), 18), sentBy: 'auto' })
+      .replace('{store}', db.settings.storeName).replace('{phone}', branch.phone)
+    db.smsLog.push({ id: id('sm'), branchId: a.branchId, clientId: c.id, phone: c.phone, type: 'appointment', text, refKey: `appointment:${a.id}`, sentAt: isoAt(day(-1), 18), sentBy: 'auto' })
   }
 
-  clients.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  payments.sort((a, b) => b.date.localeCompare(a.date))
-
-  return {
-    version: DB_VERSION, branches, accounts, productTypes, products, clients, leads, appointments, orders, payments,
-    alterations, staff, smsTemplates: structuredClone(DEFAULT_TEMPLATES), smsLog, settings, orderSeq: 1001 + orders.length,
-  }
+  db.clients.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  db.payments.sort((a, b) => b.date.localeCompare(a.date))
+  return db
 }

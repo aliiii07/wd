@@ -3,6 +3,7 @@ import { Database, Download, Globe, KeyRound, RotateCcw, Save, Store } from 'luc
 import { useI18n, LANGS } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { useStore } from '../data/store'
+import { DEMO_SHOP_ID } from '../data/seed'
 import { CAN_DOWNLOAD } from '../lib/env'
 import { todayStr } from '../lib/date'
 import type { Settings } from '../data/types'
@@ -11,7 +12,7 @@ import { Avatar, Field, MoneyInput, useConfirm, useToast } from '../components/u
 
 export default function SettingsPage() {
   const { t, lang, setLang } = useI18n()
-  const { db, mutate, user, isFounder, reset } = useStore()
+  const { db, mutate, mutatePlatform, user, shop, isFounder, resetDemo } = useStore()
   const confirm = useConfirm()
   const toast = useToast()
   const [s, setS] = useState<Settings>(db.settings)
@@ -19,13 +20,19 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState('')
 
   const saveSettings = () => {
-    mutate((d) => (d.settings = { ...s, storeName: s.storeName.trim() || d.settings.storeName }))
+    const name = s.storeName.trim() || db.settings.storeName
+    mutate((d) => (d.settings = { ...s, storeName: name }))
+    // The boutique's name also shows on the platform's list of boutiques.
+    mutatePlatform((p) => {
+      const x = p.shops.find((y) => y.id === shop?.id)
+      if (x) x.name = name
+    })
     toast(t('c.saved'))
   }
   const changePassword = () => {
     if (password.length < 6) return setPwError(t('set.passwordShort'))
-    mutate((d) => {
-      const a = d.accounts.find((x) => x.id === user?.id)
+    mutatePlatform((p) => {
+      const a = p.accounts.find((x) => x.id === user?.id)
       if (a) a.password = password
     })
     setPassword('')
@@ -34,14 +41,14 @@ export default function SettingsPage() {
   }
   const doReset = async () => {
     if (!(await confirm(t('set.resetConfirm'), { danger: true, confirmLabel: t('set.reset') }))) return
-    reset()
+    resetDemo()
     toast(t('c.saved'))
   }
   const backup = () => {
     const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `oqlibos-backup-${todayStr()}.json`
+    a.download = `${db.settings.storeName.trim().toLowerCase().replace(/\s+/g, '-') || 'boutique'}-backup-${todayStr()}.json`
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -100,7 +107,7 @@ export default function SettingsPage() {
               <p className="soft">{t('set.dataNote')}</p>
               <div className="row">
                 {CAN_DOWNLOAD && <button className="btn btn-outline" onClick={backup}><Download />{t('set.export')}</button>}
-                {isFounder && <button className="btn btn-danger" onClick={doReset}><RotateCcw />{t('set.reset')}</button>}
+                {isFounder && shop?.id === DEMO_SHOP_ID && <button className="btn btn-danger" onClick={doReset}><RotateCcw />{t('set.reset')}</button>}
               </div>
             </div>
           </section>

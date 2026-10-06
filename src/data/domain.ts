@@ -1,5 +1,5 @@
 import type { DB, ID, Order, OrderStatus, Payment, PaymentKind, Product } from './types'
-import { addDays, diffDays, overlaps, toDateStr } from '../lib/date'
+import { addDays, diffDays, overlaps, toDateStr, todayStr } from '../lib/date'
 
 // ---------- money ----------
 
@@ -108,11 +108,13 @@ export function planRows(o: Order, paid: number, today: string): PlanRow[] {
   })
 }
 
-/** Split `total` into a deposit today plus `count` equal installments due before `lastDue`. */
+/** Split `total` into a deposit today plus equal installments, the last one due on `lastDue` (before pickup). */
 export function buildPlan(total: number, deposit: number, count: number, start: string, lastDue: string) {
   const rows = [{ dueDate: start, amount: Math.min(deposit, total) }]
   const rest = Math.max(0, total - deposit)
-  if (rest > 0 && count > 0) {
+  // Whatever the deposit doesn't cover is always scheduled, so the plan adds up to the total.
+  count = Math.max(1, count)
+  if (rest > 0) {
     const span = Math.max(0, diffDays(start, lastDue))
     const base = Math.floor(rest / count / 1000) * 1000
     for (let i = 1; i <= count; i++) {
@@ -126,12 +128,14 @@ export function buildPlan(total: number, deposit: number, count: number, start: 
 // ---------- availability ----------
 
 /** Dates during which an order keeps its items away from other bookings. */
-export function blockingWindow(o: Order, cleaningDays: number, historical = false): [string, string] | null {
+export function blockingWindow(o: Order, cleaningDays: number, historical = false, today = todayStr()): [string, string] | null {
   if (o.status === 'cancelled') return null
   // A sold dress never comes back.
   if (o.type === 'sale') return [o.createdAt.slice(0, 10), '9999-12-31']
   if (!historical && (o.status === 'returned' || o.status === 'completed')) return null
-  return [o.pickupDate, addDays(o.returnDate ?? o.pickupDate, cleaningDays)]
+  // A dress still out past its return date stays blocked until it actually comes back.
+  const end = o.status === 'picked_up' && o.returnDate && o.returnDate < today ? today : o.returnDate ?? o.pickupDate
+  return [o.pickupDate, addDays(end, cleaningDays)]
 }
 
 export function conflictsFor(
