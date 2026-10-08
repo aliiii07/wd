@@ -7,6 +7,13 @@ export type Resolved = 'light' | 'dark'
 const KEY = 'oqlibos.theme'
 const query = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null)
 
+/** The system setting: the host page's own light/dark choice (data-theme on <html>) when it sets one, else the OS. */
+function systemIsDark(): boolean {
+  const forced = typeof document !== 'undefined' ? document.documentElement.dataset.theme : undefined
+  if (forced === 'dark' || forced === 'light') return forced === 'dark'
+  return !!query()?.matches
+}
+
 interface ThemeValue {
   mode: ThemeMode
   resolved: Resolved
@@ -31,14 +38,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const saved = storage.get(KEY)
     return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
   })
-  const [systemDark, setSystemDark] = useState(() => !!query()?.matches)
+  const [systemDark, setSystemDark] = useState(systemIsDark)
 
   useEffect(() => {
+    const read = () => setSystemDark(systemIsDark())
     const mq = query()
-    if (!mq) return
-    const on = (e: MediaQueryListEvent) => setSystemDark(e.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
+    mq?.addEventListener('change', read)
+    const host = new MutationObserver(read)
+    host.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => {
+      mq?.removeEventListener('change', read)
+      host.disconnect()
+    }
   }, [])
 
   const resolved: Resolved = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode

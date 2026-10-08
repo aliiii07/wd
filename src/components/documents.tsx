@@ -7,7 +7,7 @@ import type { DocFile, ID } from '../data/types'
 import { deleteFile, downloadStoredFile, formatBytes, getFile, putFile, useFileUrl } from '../lib/files'
 import { nowIso } from '../lib/date'
 import { uid } from '../lib/storage'
-import { CAN_DOWNLOAD } from '../lib/env'
+import { CAN_DOWNLOAD, CAN_EMBED_FILES } from '../lib/env'
 import { Empty, Field, FormFooter, Modal, useConfirm, useToast } from './ui'
 
 /** Files on a client's or staff member's profile: a name you choose (e.g. "Agreement") plus the file itself. */
@@ -73,7 +73,7 @@ function DocumentViewer({ doc, onClose }: { doc: DocFile | null; onClose: () => 
   const url = useFileUrl(doc?.fileId)
   if (!doc) return null
   const isImage = doc.mime.startsWith('image/')
-  const inline = isImage || doc.mime === 'application/pdf' || doc.mime.startsWith('text/')
+  const inline = CAN_EMBED_FILES && (doc.mime === 'application/pdf' || doc.mime.startsWith('text/'))
   return (
     <Modal
       open
@@ -84,7 +84,7 @@ function DocumentViewer({ doc, onClose }: { doc: DocFile | null; onClose: () => 
         <>
           <span className="muted small">{doc.fileName} · {formatBytes(doc.size)}</span>
           <span className="spacer" />
-          {url && <a className="btn btn-outline" href={url} target="_blank" rel="noopener noreferrer"><ExternalLink />{t('doc.newTab')}</a>}
+          {url && CAN_EMBED_FILES && <a className="btn btn-outline" href={url} target="_blank" rel="noopener noreferrer"><ExternalLink />{t('doc.newTab')}</a>}
           {CAN_DOWNLOAD && <button className="btn btn-primary" onClick={() => downloadStoredFile(doc.fileId, doc.fileName)}><Download />{t('doc.download')}</button>}
         </>
       }
@@ -94,7 +94,7 @@ function DocumentViewer({ doc, onClose }: { doc: DocFile | null; onClose: () => 
       ) : inline ? (
         <iframe className="doc-view" src={url} title={doc.name} />
       ) : (
-        <Empty icon={<FileText />} title={doc.fileName} hint={t('doc.noPreview')} />
+        <Empty icon={<FileText />} title={doc.fileName} hint={t(CAN_EMBED_FILES ? 'doc.noPreview' : 'doc.previewOnly')} />
       )}
     </Modal>
   )

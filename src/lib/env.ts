@@ -2,3 +2,4 @@
 export const IS_SINGLE_FILE = import.meta.env.MODE === 'single'
 export const CAN_PRINT = !IS_SINGLE_FILE
 export const CAN_DOWNLOAD = !IS_SINGLE_FILE
+export const CAN_EMBED_FILES = !IS_SINGLE_FILE

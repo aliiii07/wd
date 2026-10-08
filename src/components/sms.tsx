@@ -47,7 +47,7 @@ export function useSmsSender() {
     mutate((d) => logSms(d, results.map((r) => ({ ...r, sentBy: user?.name }))))
     const failed = results.filter((r) => r.status === 'failed')
     if (failed.length) toast(t('nt.failedN', { n: failed.length, error: failed[0].error ?? '' }), true)
-    else toast(t('nt.sentN', { n: results.length }))
+    else toast(cfg.mode === 'gateway' ? t('nt.sentN', { n: results.length }) : cfg.mode === 'device' ? t('nt.openedApp') : t('nt.loggedN', { n: results.length }))
   }
 }
 

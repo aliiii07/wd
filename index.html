@@ -13,7 +13,9 @@
       // Pick the saved theme before the first paint so dark mode doesn't flash white.
       try {
         var m = localStorage.getItem('oqlibos.theme')
-        var dark = m === 'dark' || (m !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        var host = document.documentElement.getAttribute('data-theme')
+        var system = host === 'dark' || host === 'light' ? host === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+        var dark = m === 'dark' || (m !== 'light' && system)
         document.documentElement.dataset.mode = dark ? 'dark' : 'light'
       } catch (e) {}
     </script>
