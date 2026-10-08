@@ -15,6 +15,7 @@ import ClientDetail from './pages/ClientDetail'
 import Products from './pages/Products'
 import ProductDetail from './pages/ProductDetail'
 import Payments from './pages/Payments'
+import Expenses from './pages/Expenses'
 import StaffPage from './pages/Staff'
 import StaffDetail from './pages/StaffDetail'
 import Notifications from './pages/Notifications'
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/products" element={<Products />} />
         <Route path="/products/:id" element={<ProductDetail />} />
         <Route path="/payments" element={<Payments />} />
+        <Route path="/expenses" element={<Expenses />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/staff/:id" element={<StaffDetail />} />
         <Route path="/notifications" element={<Notifications />} />

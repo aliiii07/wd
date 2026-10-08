@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
   BarChart3, Bell, Building2, CalendarDays, CalendarHeart, ChevronsLeft, ChevronsRight, ClipboardList, Globe, LayoutDashboard,
-  LogOut, Menu, MessageSquare, Moon, Settings, Shirt, Sun, UserCog, Users, Wallet,
+  LogOut, Menu, MessageSquare, Moon, Receipt, Settings, Shirt, Sun, UserCog, Users, Wallet,
 } from 'lucide-react'
 import { useI18n, LANGS } from '../i18n'
 import type { DictKey } from '../i18n/dict'
@@ -45,6 +45,7 @@ const NAV: { group: DictKey; items: NavItem[] }[] = [
     group: 'nav.group.manage',
     items: [
       { to: '/analytics', key: 'nav.analytics', icon: BarChart3 },
+      { to: '/expenses', key: 'nav.expenses', icon: Receipt },
       { to: '/staff', key: 'nav.staff', icon: UserCog },
       { to: '/branches', key: 'nav.branches', icon: Building2, founderOnly: true },
       { to: '/settings', key: 'nav.settings', icon: Settings },

@@ -1,25 +1,27 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Building2, CalendarHeart, CircleDollarSign, ClipboardList, Gauge, HandCoins, Layers, Percent, ShieldCheck, Shirt, Table2, Users, Wallet,
+  ArrowRight, Building2, CalendarHeart, CircleDollarSign, ClipboardList, Gauge, HandCoins, Layers, Percent, Receipt, ShieldCheck, Shirt, Table2,
+  TrendingUp, Users, Wallet,
 } from 'lucide-react'
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { monthShort } from '../i18n/dict'
 import { useLookups, useStore } from '../data/store'
 import {
-  dressRevenue, methodBreakdown, metrics, PERIODS, periodRange, revenueSeries, salesMix, sliceFor, staffPerformance, statusBreakdown, typeBreakdown,
-  weddingsAhead, type PeriodKey, type Slice,
+  dressRevenue, EXPENSE_CATEGORIES, EXPENSE_PIE, expenseByCategory, expenseSeries, methodBreakdown, metrics, PERIODS, periodRange, revenueSeries, salesMix,
+  sliceFor, staffPerformance, statusBreakdown, typeBreakdown, weddingsAhead, type PeriodKey, type Slice,
 } from '../data/analytics'
 import { dateOf, inRange, parseDate, todayStr } from '../lib/date'
 import { Page } from '../components/Layout'
-import { AreaTrend, Columns, Donut, foldSlices, HBars, Legend, OTHER_COLOR, SERIES, seriesColor, ShareBar, useMethodSlices } from '../components/charts'
+import { AreaTrend, Columns, Donut, expenseColor, foldSlices, HBars, Legend, OTHER_COLOR, SERIES, seriesColor, ShareBar, useMethodSlices } from '../components/charts'
 import { Chip, Empty, pctChange, productTone, Segmented, Stat } from '../components/ui'
 import { PRODUCT_STATUSES, SOURCES } from '../components/forms'
 import type { Lang } from '../data/types'
 import { ROLE_TONE } from '../components/roles'
 
-type Tab = 'overview' | 'branches' | 'products' | 'staff' | 'clients'
+type Tab = 'overview' | 'expenses' | 'branches' | 'products' | 'staff' | 'clients'
+const TABS: Tab[] = ['overview', 'expenses', 'branches', 'products', 'staff', 'clients']
 
 function bucketLabel(key: string, lang: Lang) {
   if (key.length === 7) {
@@ -33,7 +35,11 @@ export default function Analytics() {
   const { t, lang } = useI18n()
   const { db, scope, isFounder } = useStore()
   const L = useLookups()
-  const [tab, setTab] = useState<Tab>('overview')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = params.get('tab') as Tab | null
+    return asked && TABS.includes(asked) ? asked : 'overview'
+  })
   const [period, setPeriod] = useState<PeriodKey>('last3')
   const today = todayStr()
   const p = periodRange(period, today)
@@ -41,6 +47,7 @@ export default function Analytics() {
 
   const tabs = [
     { key: 'overview', label: t('an.overview') },
+    { key: 'expenses', label: t('ex.title') },
     ...(isFounder && db.branches.length > 1 ? [{ key: 'branches', label: t('an.branches') }] : []),
     { key: 'products', label: t('an.products') },
     { key: 'staff', label: t('an.staff') },
@@ -60,11 +67,12 @@ export default function Analytics() {
         <Segmented value={period} onChange={setPeriod} options={PERIODS.map((k) => ({ value: k, label: t(`an.p.${k}` as DictKey) }))} />
       </div>
       {tab === 'overview' && <Overview slice={slice} period={period} lang={lang} />}
+      {tab === 'expenses' && <ExpensesTab slice={slice} period={period} lang={lang} />}
       {tab === 'branches' && isFounder && <BranchCompare period={period} lang={lang} />}
       {tab === 'products' && <ProductsTab slice={slice} period={period} />}
       {tab === 'staff' && <StaffTab slice={slice} period={period} />}
       {tab === 'clients' && <ClientsTab slice={slice} period={period} lang={lang} />}
-      <span className="muted small">{t('an.revenueHint')} · {p.from} → {p.to}</span>
+      <span className="muted small">{tab === 'expenses' ? t('ex.hint') : t('an.revenueHint')} · {p.from} → {p.to}</span>
     </Page>
   )
 }
@@ -170,6 +178,162 @@ function Overview({ slice, period, lang }: { slice: Slice; period: PeriodKey; la
   )
 }
 
+/** Growth of a figure that can be negative (profit): measured against the size of the old value, so less loss reads as up. */
+function signedChange(cur: number, prev: number): number | null {
+  if (!prev) return cur ? null : 0
+  return ((cur - prev) / Math.abs(prev)) * 100
+}
+
+function ExpensesTab({ slice, period, lang }: { slice: Slice; period: PeriodKey; lang: Lang }) {
+  const { t, money, moneyShort } = useI18n()
+  const { db, scope, isFounder } = useStore()
+  const nav = useNavigate()
+  const today = todayStr()
+  const p = periodRange(period, today)
+  const cur = metrics(slice, p.from, p.to, today)
+  const prev = metrics(slice, p.prevFrom, p.prevTo, today)
+  const vs = t('an.vsPrev')
+  const [table, setTable] = useState(false)
+
+  const expenses = expenseSeries(slice, p)
+  const rows = revenueSeries(slice, p).map((r, i) => ({ label: bucketLabel(r.key, lang), revenue: r.value, expenses: expenses[i].value }))
+  const byCategory = expenseByCategory(slice, p.from, p.to)
+  const pieKeys = new Set(EXPENSE_PIE.map((x) => x.key))
+  const pie = [
+    ...EXPENSE_PIE.map((x) => ({ key: x.key, label: t(`expCat.${x.key}` as DictKey), value: byCategory[x.key], color: expenseColor(x.key) })),
+    { key: 'other', label: t('c.other'), value: EXPENSE_CATEGORIES.filter((c) => !pieKeys.has(c)).reduce((s, c) => s + byCategory[c], 0), color: OTHER_COLOR },
+  ].filter((x) => x.value > 0)
+  const ranked = EXPENSE_CATEGORIES.map((c) => ({ c, value: byCategory[c] })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value)
+  const branches = isFounder && scope === 'all' && db.branches.length > 1
+    ? db.branches.map((b, i) => ({ b, color: seriesColor(i), m: metrics(sliceFor(db, [b.id]), p.from, p.to, today) }))
+    : []
+
+  return (
+    <>
+      <div className="stats four">
+        <Stat icon={<CircleDollarSign />} label={t('an.revenue')} value={<span title={money(cur.revenue)}>{moneyShort(cur.revenue)}</span>} delta={{ pct: pctChange(cur.revenue, prev.revenue), label: vs }} />
+        <Stat icon={<Receipt />} label={t('ex.title')} value={<span title={money(cur.expenses)}>{moneyShort(cur.expenses)}</span>} delta={{ pct: pctChange(cur.expenses, prev.expenses), label: vs }} upIsGood={false} />
+        <Stat
+          icon={<TrendingUp />}
+          label={cur.profit < 0 ? t('ex.loss') : t('ex.profit')}
+          value={<span title={money(cur.profit)}>{moneyShort(cur.profit)}</span>}
+          delta={{ pct: signedChange(cur.profit, prev.profit), label: vs }}
+          alert={cur.profit < 0}
+        />
+        <Stat icon={<Percent />} label={t('ex.margin')} value={`${Math.round(cur.margin)}%`} hint={t('ex.marginHint')} />
+      </div>
+
+      <section className="card">
+        <div className="card-head">
+          <h3><TrendingUp />{t('ex.vsRevenue')}</h3>
+          <div className="row" style={{ gap: 16 }}>
+            <Legend items={[{ name: t('an.revenue'), color: seriesColor(0) }, { name: t('ex.title'), color: seriesColor(3) }]} />
+            <button className="btn btn-ghost btn-sm" onClick={() => setTable((v) => !v)}><Table2 />{table ? t('c.chartView') : t('c.tableView')}</button>
+          </div>
+        </div>
+        <div className="card-body">
+          {table ? (
+            <div className="table-wrap">
+              <table className="table compact">
+                <thead>
+                  <tr>
+                    <th>{p.bucket === 'day' ? t('c.date') : t('an.month')}</th>
+                    <th className="num">{t('an.revenue')}</th>
+                    <th className="num">{t('ex.title')}</th>
+                    <th className="num">{t('ex.profit')}</th>
+                    <th className="num">{t('ex.margin')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.filter((r) => r.revenue || r.expenses).map((r) => (
+                    <tr key={r.label}>
+                      <td>{r.label}</td>
+                      <td className="num">{money(r.revenue)}</td>
+                      <td className="num">{money(r.expenses)}</td>
+                      <td className={`num strong ${r.revenue - r.expenses < 0 ? 'text-bad' : ''}`}>{money(r.revenue - r.expenses)}</td>
+                      <td className="num soft">{r.revenue ? `${Math.round(((r.revenue - r.expenses) / r.revenue) * 100)}%` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Columns
+              data={rows.map((r) => ({ label: r.label, revenue: r.revenue, expenses: r.expenses }))}
+              series={[{ key: 'revenue', name: t('an.revenue'), color: seriesColor(0) }, { key: 'expenses', name: t('ex.title'), color: seriesColor(3) }]}
+            />
+          )}
+        </div>
+      </section>
+
+      <div className="grid g-2">
+        <section className="card">
+          <div className="card-head"><h3><Receipt />{t('ex.structure')}</h3><span className="sub">{t('ex.title')}</span></div>
+          <div className="card-body">
+            <Donut parts={pie} format={money} centerFormat={moneyShort} centerLabel={t('c.total')} emptyLabel={t('ex.empty')} />
+          </div>
+        </section>
+        <section className="card">
+          <div className="card-head">
+            <h3><Layers />{t('ex.byCategory')}</h3>
+            <button className="btn btn-ghost btn-sm" onClick={() => nav('/expenses')}>{t('nav.expenses')}<ArrowRight /></button>
+          </div>
+          <div className="card-body">
+            {ranked.length === 0 ? <Empty icon={<Receipt />} title={t('ex.empty')} /> : (
+              <HBars
+                format={moneyShort}
+                rows={ranked.map((r) => ({
+                  key: r.c,
+                  label: t(`expCat.${r.c}` as DictKey),
+                  value: r.value,
+                  color: expenseColor(r.c),
+                  sub: `${Math.round((r.value / (cur.expenses || 1)) * 100)}%`,
+                }))}
+              />
+            )}
+          </div>
+        </section>
+      </div>
+
+      {branches.length > 0 && (
+        <section className="card">
+          <div className="card-head"><h3><Building2 />{t('ex.byBranch')}</h3></div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('c.branch')}</th>
+                  <th className="num">{t('an.revenue')}</th>
+                  <th className="num">{t('ex.title')}</th>
+                  <th className="num">{t('ex.profit')}</th>
+                  <th className="num">{t('ex.margin')}</th>
+                  <th style={{ minWidth: 160 }}>{t('an.share')} · {t('ex.title').toLowerCase()}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branches.map(({ b, color, m }) => (
+                  <tr key={b.id}>
+                    <td><span className="row nowrap-row" style={{ gap: 8 }}><i style={{ width: 9, height: 9, borderRadius: 2, background: color }} /><span className="cell-main">{b.name}</span></span></td>
+                    <td className="num">{money(m.revenue)}</td>
+                    <td className="num">{money(m.expenses)}</td>
+                    <td className={`num strong ${m.profit < 0 ? 'text-bad' : ''}`}>{money(m.profit)}</td>
+                    <td className="num soft">{Math.round(m.margin)}%</td>
+                    <td>
+                      <span style={{ display: 'block', height: 8 }}>
+                        <span style={{ display: 'block', height: '100%', width: `${cur.expenses ? (m.expenses / cur.expenses) * 100 : 0}%`, background: color, borderRadius: '0 3px 3px 0', minWidth: m.expenses ? 2 : 0 }} />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
+  )
+}
+
 function BranchCompare({ period, lang }: { period: PeriodKey; lang: Lang }) {
   const { t, money, moneyShort, num } = useI18n()
   const { db } = useStore()
@@ -188,6 +352,9 @@ function BranchCompare({ period, lang }: { period: PeriodKey; lang: Lang }) {
 
   const lines: { label: string; get: (m: typeof total) => string; total?: string }[] = [
     { label: t('an.revenue'), get: (m) => money(m.revenue) },
+    { label: t('ex.title'), get: (m) => money(m.expenses) },
+    { label: t('ex.profit'), get: (m) => money(m.profit) },
+    { label: t('ex.margin'), get: (m) => `${Math.round(m.margin)}%` },
     { label: t('an.orders'), get: (m) => num(m.orders) },
     { label: `${t('orderType.rental')} / ${t('orderType.sale')}`, get: (m) => `${m.rentals} / ${m.sales}` },
     { label: t('an.salesVolume'), get: (m) => money(m.volume) },

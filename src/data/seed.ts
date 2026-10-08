@@ -1,15 +1,18 @@
 // Demo data: the platform registry plus one boutique ("Sharlin") with two branches and five clients in each.
 // Dates are relative to today so the dashboards always have something happening.
 import type {
-  Account, Appointment, Branch, Client, ClientSource, DB, DressColor, ID, Lang, Order, Payment, PaymentMethod, Platform,
+  Account, Appointment, Branch, Client, ClientSource, DB, DressColor, ExpenseCategory, ID, Lang, Order, Payment, PaymentMethod, Platform,
   Product, ProductType, Settings, Shop, Silhouette, SmsTemplate, Staff,
 } from './types'
-import { addDays, dotDate, todayStr } from '../lib/date'
+import { addDays, addMonths, dateOf, dotDate, startOfMonth, todayStr } from '../lib/date'
 import { orderPrefixOf } from '../lib/brand'
-import { buildPlan, conflictsFor, isoAt, orderTotal, planRows } from './domain'
+import { buildPlan, conflictsFor, isoAt, orderTotal, planRows, revenueOf } from './domain'
 
-/** Bump when the boutique data shape or demo content changes; stored data is then re-seeded. */
-export const DB_VERSION = 4
+/**
+ * Bump when the boutique data shape or demo content changes. The demo boutique is then re-seeded;
+ * other boutiques are carried over by `migrateShopDb`.
+ */
+export const DB_VERSION = 5
 export const PLATFORM_VERSION = 1
 export const DEMO_PASSWORD = '123456'
 export const DEMO_SHOP_ID = 'sharlin'
@@ -113,6 +116,7 @@ export function createShopDb(shop: Shop, branches: Branch[]): DB {
     appointments: [],
     orders: [],
     payments: [],
+    expenses: [],
     staff: [],
     documents: [],
     smsTemplates: structuredClone(DEFAULT_TEMPLATES),
@@ -120,6 +124,18 @@ export function createShopDb(shop: Shop, branches: Branch[]): DB {
     settings: defaultSettings(shop.name),
     orderSeq: 1001,
   }
+}
+
+/**
+ * Brings a boutique's saved data (or a backup file) from an older version up to date without losing records.
+ * Returns null when it is too old to convert or isn't boutique data.
+ */
+export function migrateShopDb(data: DB): DB | null {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.orders) || !data.settings) return null
+  let db = data
+  // 4 → 5: expenses were added.
+  if (db.version === 4) db = { ...db, version: 5, expenses: [] }
+  return db.version === DB_VERSION ? db : null
 }
 
 export function createPlatformSeed(today: string = todayStr()): { platform: Platform; shops: Record<ID, DB> } {
@@ -467,7 +483,51 @@ export function createDemoShopDb(shop: Shop, today: string = todayStr()): DB {
     db.smsLog.push({ id: id('sm'), branchId: a.branchId, clientId: c.id, phone: c.phone, type: 'appointment', text, refKey: `appointment:${a.id}`, status: 'logged', sentAt: isoAt(day(-1), 18), sentBy: 'auto' })
   }
 
+  // ---------- expenses: this month and the five before it ----------
+  // Kept in proportion to this demo's ten clients, so the profit figures stay believable.
+  const er = mulberry32(20261008)
+  const eint = (a: number, b: number) => a + Math.floor(er() * (b - a + 1))
+  const epick = <T,>(arr: readonly T[]): T => arr[Math.floor(er() * arr.length)]
+  const founder = 'Dilshoda Xaydaraliyeva'
+  const spend = (branchId: ID, date: string, category: ExpenseCategory, amount: number, method: PaymentMethod, note: string, by?: string) => {
+    if (date > today || amount <= 0) return
+    const createdBy = by ?? branches.find((b) => b.id === branchId)!.name
+    db.expenses.push({ id: id('e'), branchId, date, category, amount, method, note, createdAt: isoAt(date, eint(11, 18), 10), createdBy })
+  }
+  const revenueIn = (branchId: ID, month: string) =>
+    db.payments.filter((p) => p.branchId === branchId && dateOf(p.date).slice(0, 7) === month).reduce((s, p) => s + revenueOf(p), 0)
+  const costs: Record<ID, { rent: number; payroll: number; ads: [number, number] }> = {
+    b1: { rent: 3_000_000, payroll: 4_000_000, ads: [8, 13] },
+    b2: { rent: 2_000_000, payroll: 2_200_000, ads: [4, 7] },
+  }
+  const firstMonth = startOfMonth(addMonths(today, -5))
+  for (let m = -5; m <= 0; m++) {
+    const first = startOfMonth(addMonths(today, m))
+    const on = (n: number) => addDays(first, n - 1)
+    const lastMonth = addMonths(first, -1).slice(0, 7)
+    for (const b of branches) {
+      const c = costs[b.id]
+      spend(b.id, on(2), 'rent', c.rent, 'transfer', "Do'kon ijarasi", founder)
+      spend(b.id, on(5), 'salary', c.payroll + eint(-2, 2) * 100_000, 'cash', 'Hodimlar ish haqi')
+      spend(b.id, on(10), 'utilities', eint(55, 85) * 10_000, 'click', 'Elektr, gaz, suv va internet')
+      spend(b.id, on(15), 'marketing', eint(c.ads[0], c.ads[1]) * 100_000, 'card', 'Instagram reklama')
+      spend(b.id, on(20), 'taxes', Math.round((revenueIn(b.id, lastMonth) * 0.04) / 10_000) * 10_000, 'transfer', 'Aylanmadan soliq, 4%', founder)
+      spend(b.id, on(eint(6, 26)), 'transport', eint(10, 25) * 10_000, 'cash', 'Libosni yetkazish, taksi')
+      spend(b.id, on(eint(8, 24)), 'other', eint(10, 30) * 10_000, 'cash', epick(['Gullar va vitrina bezagi', 'Kanselyariya', 'Mijozlar uchun choy va shirinlik']))
+    }
+  }
+  spend('b1', addDays(startOfMonth(addMonths(today, -1)), 11), 'purchase', 2_400_000, 'transfer', 'Fata va poyabzal xaridi', founder)
+  spend('b2', addDays(startOfMonth(addMonths(today, -2)), 7), 'purchase', 1_600_000, 'transfer', 'Tufli va podyubnik xaridi', founder)
+  // Every returned rental goes to the dry cleaner; a stained one also needs mending.
+  for (const o of db.orders) {
+    if (o.type !== 'rental' || !o.returnedAt || dateOf(o.returnedAt) < firstMonth) continue
+    const back = dateOf(o.returnedAt)
+    spend(o.branchId, addDays(back, 1), 'cleaning', eint(30, 45) * 10_000, 'cash', `${o.number} · kimyoviy tozalash`)
+    if (o.damageNotes) spend(o.branchId, addDays(back, 2), 'repair', 400_000, 'cash', `${o.number} · dog'ni ketkazish`)
+  }
+
   db.clients.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   db.payments.sort((a, b) => b.date.localeCompare(a.date))
+  db.expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
   return db
 }

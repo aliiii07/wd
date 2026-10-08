@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Account, Collection, DB, ID, Platform, Shop } from './types'
-import { createDemoShopDb, createPlatformSeed, createShopDb, DB_VERSION, DEMO_SHOP_ID, PLATFORM_VERSION } from './seed'
+import { createDemoShopDb, createPlatformSeed, createShopDb, DB_VERSION, DEMO_SHOP_ID, migrateShopDb, PLATFORM_VERSION } from './seed'
 import { storage } from '../lib/storage'
 
 // The platform registry (boutiques + logins) and each boutique's data are stored separately,
@@ -36,13 +36,19 @@ function loadPlatform(): Platform {
   return seed.platform
 }
 
-/** A boutique's data from storage; recreated (demo or empty) when missing or outdated. */
+/** A boutique's data from storage; upgraded when older, recreated (demo or empty) when missing or unreadable. */
 export function readShopDb(shop: Shop): DB {
   const raw = storage.get(shopKey(shop.id))
   if (raw) {
     try {
       const db = JSON.parse(raw) as DB
       if (db.version === DB_VERSION) return db
+      // The demo is rebuilt so it shows what's new; a real boutique keeps its records.
+      const migrated = shop.id === DEMO_SHOP_ID ? null : migrateShopDb(db)
+      if (migrated) {
+        save(shopKey(shop.id), migrated)
+        return migrated
+      }
     } catch {
       /* fall through */
     }
@@ -243,6 +249,7 @@ export function useScoped() {
       appointments: f(db.appointments),
       orders: f(db.orders),
       payments: f(db.payments),
+      expenses: f(db.expenses),
       staff: f(db.staff),
       documents: f(db.documents),
       smsLog: f(db.smsLog),

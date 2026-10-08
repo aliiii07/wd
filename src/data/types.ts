@@ -193,6 +193,26 @@ export interface Payment {
   note?: string
 }
 
+export type ExpenseCategory =
+  | 'salary' | 'rent' | 'purchase' | 'cleaning' | 'marketing' | 'utilities' | 'taxes' | 'repair' | 'transport' | 'other'
+
+/** Money the boutique spends: rent, salaries, dry cleaning, new stock… */
+export interface Expense {
+  id: ID
+  branchId: ID
+  /** YYYY-MM-DD */
+  date: string
+  category: ExpenseCategory
+  /** Always positive. */
+  amount: number
+  method: PaymentMethod
+  /** Salaries: the staff member who was paid. */
+  staffId?: ID
+  note?: string
+  createdAt: string
+  createdBy?: string
+}
+
 export type StaffRole =
   | 'manager' | 'stylist' | 'sales' | 'makeup' | 'hair' | 'tailor' | 'photographer'
   | 'cashier' | 'admin' | 'cleaner' | 'driver' | 'security'
@@ -324,6 +344,7 @@ export interface DB {
   appointments: Appointment[]
   orders: Order[]
   payments: Payment[]
+  expenses: Expense[]
   staff: Staff[]
   documents: DocFile[]
   smsTemplates: SmsTemplate[]

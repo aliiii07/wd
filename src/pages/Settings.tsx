@@ -3,7 +3,7 @@ import { Check, Database, Download, FileText, KeyRound, MessageSquare, Monitor, 
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
 import { useStore } from '../data/store'
-import { DB_VERSION, DEMO_SHOP_ID } from '../data/seed'
+import { DEMO_SHOP_ID, migrateShopDb } from '../data/seed'
 import { REMINDER_ORDER } from '../data/reminders'
 import { CAN_DOWNLOAD } from '../lib/env'
 import { todayStr } from '../lib/date'
@@ -341,8 +341,9 @@ function DataTab() {
   const restore = async (file: File | undefined) => {
     if (!file) return
     try {
-      const data = JSON.parse(await file.text()) as DB
-      if (data.version !== DB_VERSION || !Array.isArray(data.orders) || !Array.isArray(data.clients) || !data.settings) throw new Error('shape')
+      // Backups from an older version are upgraded the same way stored data is.
+      const data = migrateShopDb(JSON.parse(await file.text()) as DB)
+      if (!data || !Array.isArray(data.clients)) throw new Error('shape')
       if (!(await confirm(t('set.importConfirm'), { danger: true, confirmLabel: t('set.import') }))) return
       mutate((d) => Object.assign(d, data))
       toast(t('set.importOk'))

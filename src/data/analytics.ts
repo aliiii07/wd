@@ -1,5 +1,5 @@
 // Period metrics shared by the analytics, branches and staff pages.
-import type { DB, ID, Order, PaymentMethod, ProductStatus } from './types'
+import type { DB, ExpenseCategory, ID, Order, PaymentMethod, ProductStatus } from './types'
 import { groupByOrder, itemsSubtotal, orderMoney, orderTotal, rentedDaysIn, revenueOf } from './domain'
 import { addDays, addMonths, dateOf, diffDays, eachDay, eachMonth, endOfMonth, inRange, startOfMonth } from '../lib/date'
 
@@ -43,13 +43,14 @@ export function periodRange(key: PeriodKey, today: string): Period {
   }
 }
 
-export type Slice = Pick<DB, 'orders' | 'payments' | 'clients' | 'products' | 'appointments' | 'productTypes' | 'settings'>
+export type Slice = Pick<DB, 'orders' | 'payments' | 'expenses' | 'clients' | 'products' | 'appointments' | 'productTypes' | 'settings'>
 
 export function sliceFor(db: DB, branchIds: ID[] | 'all'): Slice {
   const keep = <T extends { branchId: ID }>(arr: T[]) => (branchIds === 'all' ? arr : arr.filter((x) => branchIds.includes(x.branchId)))
   return {
     orders: keep(db.orders),
     payments: keep(db.payments),
+    expenses: keep(db.expenses),
     clients: keep(db.clients),
     products: keep(db.products),
     appointments: keep(db.appointments),
@@ -62,6 +63,11 @@ const liveOrders = (s: Slice, from: string, to: string) => s.orders.filter((o) =
 
 export interface Metrics {
   revenue: number
+  expenses: number
+  /** Revenue minus expenses. */
+  profit: number
+  /** Profit as a share of revenue, in percent; 0 when there was no revenue. */
+  margin: number
   orders: number
   rentals: number
   sales: number
@@ -81,6 +87,7 @@ export interface Metrics {
 
 export function metrics(s: Slice, from: string, to: string, today: string): Metrics {
   const revenue = s.payments.filter((p) => inRange(dateOf(p.date), from, to)).reduce((sum, p) => sum + revenueOf(p), 0)
+  const expenses = expenseTotal(s, from, to)
   const orders = liveOrders(s, from, to)
   const volume = orders.reduce((sum, o) => sum + orderTotal(o), 0)
   const rentalVolume = orders.filter((o) => o.type === 'rental').reduce((sum, o) => sum + orderTotal(o), 0)
@@ -108,6 +115,9 @@ export function metrics(s: Slice, from: string, to: string, today: string): Metr
   const viewings = s.appointments.filter((a) => a.type === 'viewing' && a.status === 'completed' && inRange(a.date, from, to))
   return {
     revenue,
+    expenses,
+    profit: revenue - expenses,
+    margin: revenue > 0 ? ((revenue - expenses) / revenue) * 100 : 0,
     orders: orders.length,
     rentals: orders.filter((o) => o.type === 'rental').length,
     sales: orders.filter((o) => o.type === 'sale').length,
@@ -131,18 +141,52 @@ export function buckets(p: Period): { key: string; from: string; to: string }[] 
   return eachMonth(p.from, p.to).map((m) => ({ key: m, from: `${m}-01`, to: endOfMonth(`${m}-01`) }))
 }
 
-export function revenueSeries(s: Slice, p: Period) {
+/** Sums dated amounts into the period's buckets. */
+function bucketSums(p: Period, entries: Iterable<{ date: string; value: number }>) {
   const bs = buckets(p)
   const index = new Map(bs.map((b, i) => [b.key, i]))
   const values = bs.map(() => 0)
-  for (const pay of s.payments) {
-    const d = dateOf(pay.date)
-    if (!inRange(d, p.from, p.to)) continue
-    const i = index.get(p.bucket === 'day' ? d : d.slice(0, 7))
-    if (i != null) values[i] += revenueOf(pay)
+  for (const e of entries) {
+    if (!inRange(e.date, p.from, p.to)) continue
+    const i = index.get(p.bucket === 'day' ? e.date : e.date.slice(0, 7))
+    if (i != null) values[i] += e.value
   }
   return bs.map((b, i) => ({ key: b.key, value: values[i] }))
 }
+
+export function revenueSeries(s: Pick<Slice, 'payments'>, p: Period) {
+  return bucketSums(p, s.payments.map((pay) => ({ date: dateOf(pay.date), value: revenueOf(pay) })))
+}
+
+// ---------- expenses ----------
+
+/** Every expense category, biggest usual spend first. */
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = ['salary', 'rent', 'purchase', 'cleaning', 'marketing', 'utilities', 'taxes', 'repair', 'transport', 'other']
+
+export function expenseTotal(s: Pick<Slice, 'expenses'>, from: string, to: string): number {
+  return s.expenses.reduce((sum, e) => (inRange(e.date, from, to) ? sum + e.amount : sum), 0)
+}
+
+export function expenseSeries(s: Pick<Slice, 'expenses'>, p: Period) {
+  return bucketSums(p, s.expenses.map((e) => ({ date: e.date, value: e.amount })))
+}
+
+export function expenseByCategory(s: Pick<Slice, 'expenses'>, from: string, to: string): Record<ExpenseCategory, number> {
+  const out = Object.fromEntries(EXPENSE_CATEGORIES.map((c) => [c, 0])) as Record<ExpenseCategory, number>
+  for (const e of s.expenses) if (inRange(e.date, from, to)) out[e.category] += e.amount
+  return out
+}
+
+/**
+ * The four categories that get their own slice in the expense pie, each with a fixed colour (index into the
+ * chart series) so a category keeps its colour whatever the period; everything else is "other".
+ */
+export const EXPENSE_PIE: { key: ExpenseCategory; color: number }[] = [
+  { key: 'salary', color: 1 },
+  { key: 'rent', color: 2 },
+  { key: 'purchase', color: 0 },
+  { key: 'cleaning', color: 3 },
+]
 
 export function methodBreakdown(s: Slice, from: string, to: string): Record<PaymentMethod, number> {
   const out = { cash: 0, card: 0, terminal: 0, transfer: 0, click: 0, payme: 0 } as Record<PaymentMethod, number>

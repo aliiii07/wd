@@ -26,7 +26,8 @@ export default function Branches() {
   const today = todayStr()
   const p = periodRange('thisMonth', today)
 
-  const hasData = (id: string) => db.products.some((x) => x.branchId === id) || db.orders.some((x) => x.branchId === id) || db.clients.some((x) => x.branchId === id)
+  const hasData = (id: string) =>
+    db.products.some((x) => x.branchId === id) || db.orders.some((x) => x.branchId === id) || db.clients.some((x) => x.branchId === id) || db.expenses.some((x) => x.branchId === id)
   const delBranch = async (b: Branch) => {
     if (hasData(b.id)) return toast(t('br.inUse'), true)
     if (!(await confirm(t('c.confirmDelete'), { danger: true, confirmLabel: t('c.delete') }))) return
@@ -70,6 +71,8 @@ export default function Branches() {
                 </div>
                 <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
                   <div className="stat" style={{ padding: 0 }}><span className="stat-label">{t('br.monthRevenue')}</span><span className="stat-value" style={{ fontSize: 20 }} title={money(m.revenue)}>{moneyShort(m.revenue)}</span></div>
+                  <div className="stat" style={{ padding: 0 }}><span className="stat-label">{t('br.monthExpenses')}</span><span className="stat-value" style={{ fontSize: 20 }} title={money(m.expenses)}>{moneyShort(m.expenses)}</span></div>
+                  <div className="stat" style={{ padding: 0 }}><span className="stat-label">{m.profit < 0 ? t('ex.loss') : t('ex.profit')}</span><span className={`stat-value ${m.profit < 0 ? 'text-bad' : ''}`} style={{ fontSize: 20 }} title={money(m.profit)}>{moneyShort(m.profit)}</span></div>
                   <div className="stat" style={{ padding: 0 }}><span className="stat-label">{t('br.active')}</span><span className="stat-value" style={{ fontSize: 20 }}>{m.activeRentals}</span></div>
                   <div className="stat" style={{ padding: 0 }}><span className="stat-label">{t('br.dresses')}</span><span className="stat-value" style={{ fontSize: 20 }}>{m.dresses}</span></div>
                   <div className="stat" style={{ padding: 0 }}><span className="stat-label">{t('br.staff')}</span><span className="stat-value" style={{ fontSize: 20 }}>{staff}</span></div>

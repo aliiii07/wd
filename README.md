@@ -28,23 +28,26 @@ Demo logins (password `123456` for all; the login page lists them under *Demo hi
 | `admin@oqlibos.uz` | Platform admin | The list of boutiques: add a boutique with its founder login and first branch, rename, switch off |
 
 The demo boutique has five clients in each branch, with orders at every stage (finished, out with the client,
-overdue, picked up today, booked ahead), so every screen has something to show.
+overdue, picked up today, booked ahead), so every screen has something to show. Its expenses cover the last six
+months and are kept in proportion to those ten clients' payments, so the payroll lines are smaller than the
+salaries on the staff pages.
 
 ## What's inside
 
 | Section | What it does |
 |---|---|
 | **Bugun** (Today) | Today's revenue vs yesterday, a pie chart of today's payments by method (and by branch for the founder), today's schedule with complete / no-show, pickups and returns for the next 3 days, overdue returns, wedding countdown for the next 14 days |
-| **Analitika** | Revenue, orders, average order, dress utilization, outstanding balances, deposits held, new clients, viewing-to-order rate; pie charts of payment methods and sales mix. Tabs: overview, branch comparison (founder), revenue per dress with payback, staff sales and commission, client sources |
+| **Analitika** | Revenue, orders, average order, dress utilization, outstanding balances, deposits held, new clients, viewing-to-order rate; pie charts of payment methods and sales mix. Tabs: overview, **expenses** (revenue vs expenses by month, net profit and margin, a pie of where the money goes, every category ranked, expenses and profit by branch), branch comparison (founder), revenue per dress with payback, staff sales and commission, client sources |
 | **Kalendar** | Month view of weddings, pickups, returns and appointments, plus a per-dress timeline of booked, rented, overdue, sold and cleaning days |
 | **Buyurtmalar** | Rental and sale orders: deposit + installment plan due before pickup, security deposit, late fee per day, conflict check against other bookings, hand-over, return with late fee / damage deducted from the deposit, printable contract in uz/ru/en with the boutique's requisites |
 | **Ko'rik / Andoza** | Viewings, fittings, pickups and returns with the stylist and the dresses to show |
 | **Mijozlar** | Client profile: contact, where she heard about you, SMS language, wedding countdown, orders, appointments, **documents**, SMS history and **Send SMS** |
 | **Tavarlar** | Dresses (size, colour, silhouette, condition, status, rent/sale/both, prices, cost) with **photos** (add them in the edit form or on the dress page; the first is the cover), accessories with stock, and **product types** you can add in three languages |
 | **To'lovlar** | Payment history by method and type, and a quick-sale till for accessories |
+| **Xarajatlar** | What the boutique spends, per branch: salaries (pick a staff member and their monthly salary fills in), rent, stock purchases, dry cleaning, marketing, utilities, taxes, repairs, transport and other. For any period: total spent against the previous period, revenue, net profit and margin, the biggest category, and a breakdown by category |
 | **Hodimlar** | Staff list and **staff profiles** (photo, birthday, address, shift, salary, commission, this month's sales and payout, upcoming appointments, documents). Roles: manager, stylist, sales consultant, make-up artist, hair stylist, tailor, photographer, cashier, administrator, cleaner, driver, security. Weekly schedule and commission payouts |
 | **Xabarnomalar** | Reminders to send (appointment, pickup, return, overdue, balance due, wedding countdown); **Xabar yozish**: find any client and write her anything, templates can be dropped in and fill in her real dates and amounts; templates in three languages (click to copy, **Edit** on each); SMS history with delivery status |
-| **Filiallar** | Branches with this month's figures, and the boutique's logins (founder / branch account) |
+| **Filiallar** | Branches with this month's revenue, expenses and profit, and the boutique's logins (founder / branch account) |
 | **Sozlamalar** | Boutique details and opening hours; rental and payment defaults (late fee, security deposit, cleaning days, rental length, deposit %, installments, accepted payment methods); SMS (sending mode, which reminders, how many days ahead, test SMS, setup guide); contract requisites and an extra clause; look (light / dark / follow the system, eight brand colours); password; backup, restore and demo reset |
 
 Each client and staff profile has a **Documents** card: give the file a name (for example *Shartnoma* / Agreement),
@@ -100,7 +103,7 @@ Notes:
 
 - React 19 + TypeScript + Vite, Recharts for charts, lucide icons, HashRouter.
 - `src/styles.css`: the design tokens (colours, type, spacing) for the light and dark themes and the eight brand
-  colours; fonts are Prata for headings and Jost for everything else.
+  colours; fonts are Prata for headings and Poppins for everything else (Montserrat for Cyrillic, which Poppins lacks).
 - `src/lib/brand.ts`: the platform's name and monogram (change them here). `src/lib/theme.tsx`: light / dark mode.
 - `src/data/types.ts`: the data model. `Platform` holds the boutiques and every login; each boutique's records
   live in their own `DB`.
@@ -115,7 +118,7 @@ Notes:
 
 This version keeps data **in the browser**:
 
-- Records (clients, orders, payments, settings…) are in localStorage: one entry for the platform (boutiques and
+- Records (clients, orders, payments, expenses, settings…) are in localStorage: one entry for the platform (boutiques and
   logins) and one per boutique. Settings → Data exports and restores them as a JSON backup.
 - Photos and documents are in the browser's IndexedDB **on this device only**. They are not part of the JSON
   backup and are not visible from another computer or phone.

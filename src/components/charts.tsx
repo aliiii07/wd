@@ -2,8 +2,8 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Res
 import type { ReactNode } from 'react'
 import { useI18n } from '../i18n'
 import type { DictKey } from '../i18n/dict'
-import { METHOD_GROUPS, methodGroupTotals } from '../data/analytics'
-import type { PaymentMethod } from '../data/types'
+import { EXPENSE_PIE, METHOD_GROUPS, methodGroupTotals } from '../data/analytics'
+import type { ExpenseCategory, PaymentMethod } from '../data/types'
 
 /**
  * Validated categorical order (gold, plum, jade, wine), with separate light and dark steps defined
@@ -13,6 +13,12 @@ export const SERIES = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)']
 export const seriesColor = (i: number) => SERIES[i % SERIES.length]
 /** Neutral for folded "other" slices, deliberately greyer than every series colour. */
 export const OTHER_COLOR = 'var(--s-other)'
+
+/** An expense category's colour: fixed for the four that get their own pie slice, neutral for the rest. */
+export function expenseColor(c: ExpenseCategory): string {
+  const fixed = EXPENSE_PIE.find((x) => x.key === c)
+  return fixed ? seriesColor(fixed.color) : OTHER_COLOR
+}
 
 const axis = { fill: 'var(--text-3)', fontSize: 11.5 }
 const GRID = 'var(--line)'
